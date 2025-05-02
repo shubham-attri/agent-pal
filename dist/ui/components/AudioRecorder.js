@@ -39,6 +39,7 @@ class AudioRecorder {
             }
             // Set up event listeners
             this.setupEventListeners();
+            this.setupBlackholeEventListeners();
         }
         catch (error) {
             console.error('Error initializing audio recorder:', error);
@@ -85,10 +86,18 @@ class AudioRecorder {
         window.api.on('audio-recording-stopped', (data) => {
             this.isRecording = false;
             this.updateAudioButtonState();
-            this.updateStatus(`Recording saved to: ${data.filePath}`);
+            if (data.error) {
+                this.updateStatus(`Recording failed: ${data.error}`, true);
+            }
+            else if (data.success === false) {
+                this.updateStatus('Recording failed. Check console for details.', true);
+            }
+            else {
+                this.updateStatus(`Recording saved to: ${data.filePath}`);
+            }
             setTimeout(() => {
                 this.hideStatus();
-            }, 3000);
+            }, 5000); // Show status for longer time (5 seconds)
         });
     }
     /**
@@ -98,35 +107,76 @@ class AudioRecorder {
         try {
             if (this.isRecording) {
                 // Stop recording
+                this.updateStatus('Stopping recording...');
                 await window.api.stopAudioRecording();
             }
             else {
                 // Start recording with the selected device (or default if none selected)
-                await window.api.startAudioRecording(this.selectedDeviceId);
+                this.updateStatus('Starting recording...');
+                const result = await window.api.startAudioRecording(this.selectedDeviceId);
+                if (!result) {
+                    this.updateStatus('Failed to start recording', true);
+                }
             }
         }
         catch (error) {
             console.error('Error toggling recording:', error);
-            this.updateStatus('Error with recording', true);
+            this.updateStatus(error instanceof Error ? error.message : 'Error with recording', true);
         }
     }
     /**
      * Set up BlackHole as the system audio output
      */
-    async setupBlackhole() {
+    async setupBlackhole(outputDeviceName) {
         try {
-            const result = await window.api.setupBlackhole();
+            this.updateStatus('Setting up BlackHole audio routing...');
+            const result = await window.api.setupBlackhole(outputDeviceName);
+            // Get the list of available output devices for future selections
+            const outputDevices = await window.api.getAudioOutputDevices();
+            console.log('Available output devices:', outputDevices);
             if (result) {
-                this.updateStatus('BlackHole audio routing set up');
-                setTimeout(() => {
-                    this.hideStatus();
-                }, 3000);
+                const deviceLabel = outputDeviceName || 'default speakers';
+                this.updateStatus(`Audio routing set up: sending to both BlackHole and ${deviceLabel}`);
+                // Get updated device list which should now include BlackHole
+                this.audioDevices = await window.api.getAudioDevices();
+                // Find BlackHole device if available
+                const blackholeDevice = this.audioDevices.find(device => device.isBlackHole);
+                if (blackholeDevice) {
+                    this.selectedDeviceId = blackholeDevice.id;
+                    console.log('BlackHole device found and selected:', blackholeDevice);
+                }
+                else {
+                    this.updateStatus('BlackHole device configured but not detected in device list', true);
+                }
             }
+            else {
+                this.updateStatus('Failed to set up BlackHole - please install BlackHole audio driver', true);
+            }
+            setTimeout(() => {
+                this.hideStatus();
+            }, 5000);
         }
         catch (error) {
             console.error('Error setting up BlackHole:', error);
-            this.updateStatus('Failed to set up BlackHole', true);
+            this.updateStatus('Failed to set up BlackHole - do you have it installed?', true);
         }
+    }
+    /**
+     * Set up event listeners for blackhole complete events
+     */
+    setupBlackholeEventListeners() {
+        window.api.on('blackhole-setup-complete', (data) => {
+            if (data.success) {
+                const deviceLabel = data.deviceName || 'default speakers';
+                this.updateStatus(`Audio routing set up: sending to both BlackHole and ${deviceLabel}`);
+            }
+            else {
+                this.updateStatus(`Failed to set up audio routing: ${data.error || 'Unknown error'}`, true);
+            }
+            setTimeout(() => {
+                this.hideStatus();
+            }, 5000);
+        });
     }
     /**
      * Update the audio button appearance based on recording state
