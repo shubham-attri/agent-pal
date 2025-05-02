@@ -12,7 +12,6 @@ electron_1.contextBridge.exposeInMainWorld('api', {
             'audio-recording-stopped'
         ];
         if (validChannels.includes(channel)) {
-            // Remove the event listener to avoid memory leaks
             const subscription = (_event, ...args) => callback(...args);
             electron_1.ipcRenderer.on(channel, subscription);
             // Return a function to remove the event listener
@@ -24,8 +23,9 @@ electron_1.contextBridge.exposeInMainWorld('api', {
     },
     // General app functions
     askQuestion: (question) => electron_1.ipcRenderer.invoke('ask-question', question),
-    toggleWindowSize: () => electron_1.ipcRenderer.invoke('toggle-window-size'),
-    createNewChat: () => electron_1.ipcRenderer.invoke('create-new-chat'),
+    toggleWindowSize: () => electron_1.ipcRenderer.send('toggle-window-size'),
+    hideWindow: () => electron_1.ipcRenderer.send('hide-window'),
+    createNewChat: () => electron_1.ipcRenderer.send('create-new-chat'),
     // Audio-related functions
     requestMicrophonePermission: () => electron_1.ipcRenderer.invoke('request-microphone-permission'),
     getAudioDevices: () => electron_1.ipcRenderer.invoke('get-audio-devices'),
