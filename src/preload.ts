@@ -1,47 +1,42 @@
-import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
-
-// Define API types
-interface IpcApi {
-  askQuestion: (question: string) => Promise<string>;
-  minimizeWindow: () => Promise<void>;
-  toggleWindowSize: () => Promise<void>;
-  closeWindow: () => Promise<void>;
-  createNewChat: () => Promise<{ success: boolean }>;
-  on: (channel: string, callback: (...args: any[]) => void) => (() => void) | undefined;
-}
+import { contextBridge, ipcRenderer } from 'electron';
+import { IpcApi } from './types';
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
-contextBridge.exposeInMainWorld('api', {
-  // Question answering
-  askQuestion: (question: string) => ipcRenderer.invoke('ask-question', question),
-  
-  // Window controls
-  minimizeWindow: () => ipcRenderer.invoke('minimize-window'),
-  toggleWindowSize: () => ipcRenderer.invoke('toggle-window-size'),
-  closeWindow: () => ipcRenderer.invoke('close-window'),
-  
-  // Chat management
-  createNewChat: () => ipcRenderer.invoke('create-new-chat'),
-  
-  // Event listeners
-  on: (channel: string, callback: (...args: any[]) => void) => {
-    // Whitelist channels
-    const validChannels = ['new-chat'];
-    if (validChannels.includes(channel)) {
-      // Remove the event listener to avoid memory leaks
-      ipcRenderer.removeAllListeners(channel);
-      
-      // Add a new listener
-      ipcRenderer.on(channel, (_: IpcRendererEvent, ...args: any[]) => callback(...args));
-      
-      return () => {
-        ipcRenderer.removeAllListeners(channel);
-      };
-    }
-    return undefined;
-  }
-} as IpcApi);
+contextBridge.exposeInMainWorld(
+  'api', {
+    on: (channel: string, callback: (...args: any[]) => void) => {
+      // Whitelist channels
+      const validChannels = [
+        'new-chat', 
+        'audio-recording-started', 
+        'audio-recording-stopped'
+      ];
+      if (validChannels.includes(channel)) {
+        // Remove the event listener to avoid memory leaks
+        const subscription = (_event: any, ...args: any[]) => callback(...args);
+        ipcRenderer.on(channel, subscription);
+        
+        // Return a function to remove the event listener
+        return () => {
+          ipcRenderer.removeListener(channel, subscription);
+        };
+      }
+      return undefined;
+    },
+    
+    // General app functions
+    askQuestion: (question: string) => ipcRenderer.invoke('ask-question', question),
+    toggleWindowSize: () => ipcRenderer.invoke('toggle-window-size'),
+    createNewChat: () => ipcRenderer.invoke('create-new-chat'),
+    
+    // Audio-related functions
+    requestMicrophonePermission: () => ipcRenderer.invoke('request-microphone-permission'),
+    getAudioDevices: () => ipcRenderer.invoke('get-audio-devices'),
+    startAudioRecording: (deviceId?: string) => ipcRenderer.invoke('start-audio-recording', deviceId),
+    stopAudioRecording: () => ipcRenderer.invoke('stop-audio-recording'),
+    setupBlackhole: () => ipcRenderer.invoke('setup-blackhole')
+  } as IpcApi);
 
 // Add this to global types
 declare global {

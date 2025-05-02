@@ -36,10 +36,13 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
+const child_process_1 = require("child_process");
 const isDev = process.env.NODE_ENV === 'development';
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;
+let audioRecording = false;
+let audioProcess = null;
 const windowConfig = {
     small: {
         width: 600, // Reduced width to match the chatbar
@@ -52,6 +55,14 @@ const windowConfig = {
         resizable: true
     }
 };
+// Audio recording directory
+const recordingsDir = path.join(electron_1.app.getPath('userData'), 'recordings');
+// Create recordings directory if it doesn't exist
+function ensureRecordingsDirExists() {
+    if (!fs.existsSync(recordingsDir)) {
+        fs.mkdirSync(recordingsDir, { recursive: true });
+    }
+}
 function createWindow() {
     // Get display size
     const primaryDisplay = electron_1.screen.getPrimaryDisplay();
@@ -216,16 +227,179 @@ function registerShortcuts() {
         toggleWindow();
     });
 }
-electron_1.app.whenReady().then(() => {
+// Audio related functions
+function requestMicrophonePermission() {
+    if (process.platform !== 'darwin') {
+        return Promise.resolve(true); // Skip permission check on non-macOS
+    }
+    return electron_1.systemPreferences.askForMediaAccess('microphone')
+        .then(granted => {
+        console.log('Microphone permission:', granted ? 'granted' : 'denied');
+        return granted;
+    })
+        .catch(err => {
+        console.error('Error requesting microphone permission:', err);
+        return false;
+    });
+}
+// Get available audio devices including BlackHole
+async function getAudioDevices() {
+    try {
+        // Instead of using desktopCapturer for audio sources,
+        // we'll execute a command to list audio devices
+        const command = 'system_profiler';
+        const args = ['SPAudioDataType'];
+        return new Promise((resolve, reject) => {
+            const process = (0, child_process_1.spawn)(command, args);
+            let stdout = '';
+            let stderr = '';
+            process.stdout.on('data', (data) => {
+                stdout += data.toString();
+            });
+            process.stderr.on('data', (data) => {
+                stderr += data.toString();
+            });
+            process.on('close', (code) => {
+                if (code === 0) {
+                    // Parse the output to find audio devices
+                    const devices = parseAudioDevices(stdout);
+                    resolve(devices);
+                }
+                else {
+                    console.error(`Error getting audio devices: ${stderr}`);
+                    reject(new Error(stderr));
+                }
+            });
+        });
+    }
+    catch (error) {
+        console.error('Failed to get audio devices:', error);
+        return [];
+    }
+}
+// Helper function to parse audio device output
+function parseAudioDevices(output) {
+    const devices = [];
+    // Look for BlackHole and other audio devices
+    const lines = output.split('\n');
+    let currentDevice = null;
+    for (const line of lines) {
+        if (line.includes('Name:')) {
+            if (currentDevice) {
+                devices.push(currentDevice);
+            }
+            const name = line.replace('Name:', '').trim();
+            currentDevice = { name, id: name, isBlackHole: name.includes('BlackHole') };
+        }
+    }
+    // Add the last device if it exists
+    if (currentDevice) {
+        devices.push(currentDevice);
+    }
+    return devices;
+}
+// Start recording audio
+function startAudioRecording(deviceId = '') {
+    return new Promise((resolve, reject) => {
+        if (audioRecording) {
+            resolve(true);
+            return;
+        }
+        ensureRecordingsDirExists();
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const outputFile = path.join(recordingsDir, `recording-${timestamp}.wav`);
+        // Use ffmpeg or other command-line tools to capture audio
+        // This is a simplified example - you might need to adjust the command based on your needs
+        try {
+            let command = 'ffmpeg';
+            let args = [
+                '-f', 'avfoundation',
+                '-i', deviceId || ':0', // Use default device if not specified
+                '-ac', '2',
+                '-ar', '44100',
+                outputFile
+            ];
+            audioProcess = (0, child_process_1.spawn)(command, args);
+            audioRecording = true;
+            audioProcess.stdout.on('data', (data) => {
+                console.log(`stdout: ${data.toString()}`);
+            });
+            audioProcess.stderr.on('data', (data) => {
+                console.error(`stderr: ${data.toString()}`);
+            });
+            audioProcess.on('close', (code) => {
+                console.log(`Audio recording process exited with code ${code}`);
+                audioRecording = false;
+                audioProcess = null;
+                if (mainWindow) {
+                    mainWindow.webContents.send('audio-recording-stopped', { filePath: outputFile });
+                }
+            });
+            if (mainWindow) {
+                mainWindow.webContents.send('audio-recording-started');
+            }
+            resolve(true);
+        }
+        catch (error) {
+            console.error('Failed to start audio recording:', error);
+            audioRecording = false;
+            reject(error);
+        }
+    });
+}
+// Stop recording audio
+function stopAudioRecording() {
+    return new Promise((resolve) => {
+        if (!audioRecording || !audioProcess) {
+            resolve(false);
+            return;
+        }
+        // Send SIGTERM to gracefully stop the recording process
+        audioProcess.kill('SIGTERM');
+        // The 'close' event handler will set audioRecording to false
+        resolve(true);
+    });
+}
+// Setup BlackHole as audio output
+function setupBlackHoleRouting() {
+    return new Promise((resolve, reject) => {
+        try {
+            // On macOS, we can use the 'SwitchAudioSource' command-line tool
+            // You may need to install it: brew install switchaudio-osx
+            const command = 'SwitchAudioSource';
+            const args = ['-s', 'BlackHole 16ch'];
+            const process = (0, child_process_1.spawn)(command, args);
+            process.on('close', (code) => {
+                if (code === 0) {
+                    console.log('Successfully switched to BlackHole audio device');
+                    resolve(true);
+                }
+                else {
+                    console.error(`Failed to switch audio device, exit code: ${code}`);
+                    reject(new Error(`Failed to switch audio device, exit code: ${code}`));
+                }
+            });
+        }
+        catch (error) {
+            console.error('Error setting up BlackHole routing:', error);
+            reject(error);
+        }
+    });
+}
+electron_1.app.whenReady().then(async () => {
     // Set app name that appears in menu bar
     electron_1.app.name = 'Agent Pal';
     // Make sure app is visible in dock
     if (process.platform === 'darwin') {
         electron_1.app.dock.show();
     }
+    // Create the recordings directory
+    ensureRecordingsDirExists();
     createWindow();
     createTray();
     registerShortcuts();
+    // Request microphone permission on start
+    await requestMicrophonePermission();
     electron_1.app.on('activate', function () {
         if (electron_1.BrowserWindow.getAllWindows().length === 0)
             createWindow();
@@ -265,4 +439,20 @@ electron_1.ipcMain.handle('close-window', () => {
 electron_1.ipcMain.handle('create-new-chat', () => {
     // This will be expanded in the future
     return { success: true };
+});
+// Handle IPC messages for audio recording
+electron_1.ipcMain.handle('request-microphone-permission', async () => {
+    return await requestMicrophonePermission();
+});
+electron_1.ipcMain.handle('get-audio-devices', async () => {
+    return await getAudioDevices();
+});
+electron_1.ipcMain.handle('start-audio-recording', async (event, deviceId) => {
+    return await startAudioRecording(deviceId);
+});
+electron_1.ipcMain.handle('stop-audio-recording', async () => {
+    return await stopAudioRecording();
+});
+electron_1.ipcMain.handle('setup-blackhole', async () => {
+    return await setupBlackHoleRouting();
 });

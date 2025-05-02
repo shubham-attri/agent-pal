@@ -4,27 +4,32 @@ const electron_1 = require("electron");
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 electron_1.contextBridge.exposeInMainWorld('api', {
-    // Question answering
-    askQuestion: (question) => electron_1.ipcRenderer.invoke('ask-question', question),
-    // Window controls
-    minimizeWindow: () => electron_1.ipcRenderer.invoke('minimize-window'),
-    toggleWindowSize: () => electron_1.ipcRenderer.invoke('toggle-window-size'),
-    closeWindow: () => electron_1.ipcRenderer.invoke('close-window'),
-    // Chat management
-    createNewChat: () => electron_1.ipcRenderer.invoke('create-new-chat'),
-    // Event listeners
     on: (channel, callback) => {
         // Whitelist channels
-        const validChannels = ['new-chat'];
+        const validChannels = [
+            'new-chat',
+            'audio-recording-started',
+            'audio-recording-stopped'
+        ];
         if (validChannels.includes(channel)) {
             // Remove the event listener to avoid memory leaks
-            electron_1.ipcRenderer.removeAllListeners(channel);
-            // Add a new listener
-            electron_1.ipcRenderer.on(channel, (_, ...args) => callback(...args));
+            const subscription = (_event, ...args) => callback(...args);
+            electron_1.ipcRenderer.on(channel, subscription);
+            // Return a function to remove the event listener
             return () => {
-                electron_1.ipcRenderer.removeAllListeners(channel);
+                electron_1.ipcRenderer.removeListener(channel, subscription);
             };
         }
         return undefined;
-    }
+    },
+    // General app functions
+    askQuestion: (question) => electron_1.ipcRenderer.invoke('ask-question', question),
+    toggleWindowSize: () => electron_1.ipcRenderer.invoke('toggle-window-size'),
+    createNewChat: () => electron_1.ipcRenderer.invoke('create-new-chat'),
+    // Audio-related functions
+    requestMicrophonePermission: () => electron_1.ipcRenderer.invoke('request-microphone-permission'),
+    getAudioDevices: () => electron_1.ipcRenderer.invoke('get-audio-devices'),
+    startAudioRecording: (deviceId) => electron_1.ipcRenderer.invoke('start-audio-recording', deviceId),
+    stopAudioRecording: () => electron_1.ipcRenderer.invoke('stop-audio-recording'),
+    setupBlackhole: () => electron_1.ipcRenderer.invoke('setup-blackhole')
 });
