@@ -5,7 +5,7 @@ exports.ChatBar = void 0;
  * ChatBar component - handles the main searchbar/chatbar UI and interactions
  */
 class ChatBar {
-    constructor() {
+    constructor(miniWindowInstance) {
         this.isExpanded = false;
         // Initialize DOM elements
         this.questionInput = document.getElementById('question-input');
@@ -18,11 +18,23 @@ class ChatBar {
         this.newChatButton = document.getElementById('new-chat-button');
         this.clearChatButton = document.getElementById('clear-chat-button');
         this.closeChatButton = document.getElementById('close-chat-button');
+        // Assign MiniWindow instance
+        this.miniWindow = miniWindowInstance;
         // Generate initial chat ID
         this.currentChatId = this.generateChatId();
         // Set up event listeners
         this.setupEventListeners();
     }
+    /**
+     * Generate a unique chat ID (simple timestamp for now)
+     */
+    generateChatId() {
+        return `chat-${Date.now()}`;
+    }
+    // Removed setQuestionProcessor as we'll interact with MiniWindow directly
+    // public setQuestionProcessor(processor: any): void {
+    //   this.questionProcessor = processor;
+    // }
     /**
      * Set up all event listeners for the ChatBar
      */
@@ -42,19 +54,28 @@ class ChatBar {
         }
         // When input value changes, toggle placeholder visibility
         this.questionInput.addEventListener('input', () => {
-            // Hide label as soon as typing begins
-            this.searchLabel.style.opacity = '0';
-        });
-        // When input is focused but empty, keep label visible
-        this.questionInput.addEventListener('focus', () => {
+            // Hide label when input has content
             if (this.questionInput.value.trim() !== '') {
                 this.searchLabel.style.opacity = '0';
+            }
+            else {
+                this.searchLabel.style.opacity = '1';
+            }
+        });
+        // When input is focused but empty, keep label visible
+        // Adjusted focus/blur logic slightly for better UX
+        this.questionInput.addEventListener('focus', () => {
+            if (this.questionInput.value.trim() === '') {
+                this.searchLabel.style.opacity = '1'; // Keep label if empty on focus
             }
         });
         // When input loses focus and is empty, show label again
         this.questionInput.addEventListener('blur', () => {
             if (this.questionInput.value.trim() === '') {
                 this.searchLabel.style.opacity = '1';
+            }
+            else {
+                this.searchLabel.style.opacity = '0'; // Hide if has content on blur
             }
         });
         // Set up action buttons
@@ -77,13 +98,14 @@ class ChatBar {
         window.api.on('new-chat', () => {
             this.createNewChat();
         });
-        // Re-focus input when clicking anywhere in the app
+        // Re-focus input when clicking anywhere in the app (except specific elements)
         document.addEventListener('click', (e) => {
             const target = e.target;
             if (target.id !== 'question-input' &&
                 !target.closest('button') &&
                 !target.closest('.message') &&
-                !target.closest('.app-icon')) {
+                !target.closest('.app-icon') &&
+                !target.closest('.mini-window')) { // Avoid focus steal from mini-window
                 this.questionInput.focus();
             }
         });
@@ -101,7 +123,7 @@ class ChatBar {
             // Scroll to bottom of chat
             setTimeout(() => {
                 this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
-            }, 100);
+            }, 100); // Delay slightly for transition
         }
         else {
             document.body.classList.remove('expanded');
@@ -119,12 +141,16 @@ class ChatBar {
         while (this.messagesContainer.firstChild) {
             this.messagesContainer.removeChild(this.messagesContainer.firstChild);
         }
-        // Add back welcome message and capabilities
-        this.messagesContainer.appendChild(welcomeMessage);
-        this.messagesContainer.appendChild(capabilities);
-        // Reset welcome message visibility
-        welcomeMessage.style.display = 'block';
-        capabilities.style.display = 'block';
+        // Add back welcome message and capabilities if they exist
+        if (welcomeMessage)
+            this.messagesContainer.appendChild(welcomeMessage);
+        if (capabilities)
+            this.messagesContainer.appendChild(capabilities);
+        // Reset welcome message visibility if exists
+        if (welcomeMessage)
+            welcomeMessage.style.display = 'block';
+        if (capabilities)
+            capabilities.style.display = 'block';
         // Generate new chat ID
         this.currentChatId = this.generateChatId();
         this.chatTitle.textContent = 'New conversation';
@@ -133,27 +159,21 @@ class ChatBar {
         this.searchLabel.style.opacity = '1';
     }
     /**
-     * Close the chat and collapse the window
+     * Close the chat and hide the window
      */
     closeChat() {
-        // Hide chat and collapse window
-        if (this.isExpanded) {
-            this.toggleExpandedState();
-        }
+        // Simply hide the window
+        window.api.hideWindow();
     }
     /**
-     * Create a new chat session
+     * Start a new chat session
      */
     createNewChat() {
         // Clear chat content
         this.clearChat();
-        // Expand if not already expanded
-        if (!this.isExpanded) {
-            this.toggleExpandedState();
-        }
         // Focus input
         this.questionInput.focus();
-        // Notify backend (for future implementation)
+        // Notify backend (main.ts uses this to show window)
         window.api.createNewChat();
     }
     /**
@@ -161,133 +181,152 @@ class ChatBar {
      */
     async handleQuestion() {
         const question = this.questionInput.value.trim();
-        if (!question)
+        // Prevent sending if empty or mini-window is already doing something
+        if (!question || (this.miniWindow && this.miniWindow.isVisible)) {
+            console.log('Question empty or MiniWindow busy, not sending.'); // Debug log
             return;
-        // Expand UI if not already expanded
-        if (!this.isExpanded) {
-            this.toggleExpandedState();
         }
-        // Update chat title with first few words of first question
-        if (this.chatTitle.textContent === 'New conversation') {
-            const titleText = question.length > 30
-                ? question.substring(0, 30) + '...'
-                : question;
-            this.chatTitle.textContent = titleText;
+        // Pass the question to the MiniWindow
+        if (this.miniWindow) {
+            this.miniWindow.processQuestion(question);
         }
-        // Add user question to chat with animated entry
-        this.addMessageToChat('user', question);
-        // Clear input
+        else {
+            console.error("MiniWindow instance not available in ChatBar");
+            return;
+        }
+        // Clear input immediately
         this.questionInput.value = '';
-        // Show typing indicator
-        const typingIndicator = this.addTypingIndicator();
-        try {
-            // Simulate a small delay for realistic typing
-            await new Promise(resolve => setTimeout(resolve, 800));
-            // Get answer from main process
-            const answer = await window.api.askQuestion(question);
-            // Remove typing indicator
-            typingIndicator.remove();
-            // Add response
-            this.addMessageToChat('assistant', answer);
+        this.searchLabel.style.opacity = '1'; // Show label again
+        // Hide the ChatBar window
+        window.api.hideWindow();
+    }
+    /**
+     * Adds a message to the chat display area.
+     * @param role - The role of the message sender ('user', 'assistant', 'system')
+     * @param content - The message content
+     */
+    addMessageToChat(role, content) {
+        // Remove welcome message if it's the first user message
+        const welcomeElement = this.messagesContainer.querySelector('#welcome-message');
+        if (role === 'user' && welcomeElement) {
+            const capabilitiesElement = this.messagesContainer.querySelector('.capabilities');
+            if (welcomeElement)
+                welcomeElement.style.display = 'none';
+            if (capabilitiesElement)
+                capabilitiesElement.style.display = 'none';
         }
-        catch (error) {
-            // Remove typing indicator
-            typingIndicator.remove();
-            if (error instanceof Error) {
-                this.addMessageToChat('system', 'Error: ' + error.message);
+        const messageDiv = document.createElement('div');
+        messageDiv.classList.add('message', role);
+        // Use textContent for security unless HTML is explicitly needed and sanitized
+        messageDiv.textContent = content;
+        // Special handling for assistant might involve markdown parsing later
+        // if (role === 'assistant') { ... }
+        this.messagesContainer.appendChild(messageDiv);
+        this.scrollChatToBottom(); // Scroll after adding message
+    }
+    /**
+     * Scrolls the chat container to the bottom.
+     */
+    scrollChatToBottom() {
+        // Use setTimeout to ensure the scroll happens after the DOM update
+        setTimeout(() => {
+            if (this.messagesContainer) {
+                this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
             }
-            else {
-                this.addMessageToChat('system', 'An unknown error occurred');
-            }
+        }, 0); // Delay of 0ms pushes execution to the end of the event queue
+    }
+    /**
+     * Focuses the main question input field.
+     */
+    focusInput() {
+        if (this.questionInput) {
+            this.questionInput.focus();
         }
     }
     /**
-     * Add a typing indicator to show the assistant is responding
+     * Add a message to the chat container
+     * @param sender 'user', 'assistant', or 'system'
+     * @param text Message content (can be HTML)
+     */
+    addMessageToChatOld(sender, text) {
+        // Hide welcome message if it's visible
+        const welcomeMessage = document.getElementById('welcome-message');
+        const capabilities = document.querySelector('.capabilities');
+        if (welcomeMessage && welcomeMessage.style.display !== 'none') {
+            welcomeMessage.style.display = 'none';
+        }
+        if (capabilities && capabilities.style.display !== 'none') {
+            capabilities.style.display = 'none';
+        }
+        const messageDiv = document.createElement('div');
+        messageDiv.classList.add('message', sender);
+        messageDiv.innerHTML = `<div class="message-content">${text}</div>`; // Wrap content
+        this.messagesContainer.appendChild(messageDiv);
+        // Add animation class
+        messageDiv.classList.add('message-enter');
+        // Scroll to bottom
+        this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+    }
+    /**
+     * Add typing indicator that shows the assistant is "typing"
      */
     addTypingIndicator() {
         const typingDiv = document.createElement('div');
         typingDiv.classList.add('message', 'assistant', 'typing');
         typingDiv.innerHTML = '<span class="dot-flashing"></span>';
-        // Style the typing indicator
-        const style = document.createElement('style');
-        style.textContent = `
-      .typing {
-        padding: 8px 14px;
-        font-family: "Jersey 20", sans-serif;
-      }
-      .dot-flashing {
-        display: inline-block;
-        position: relative;
-        width: 10px;
-        height: 10px;
-        border-radius: 5px;
-        background-color: var(--secondary-foreground);
-        color: var(--secondary-foreground);
-        animation: dotFlashing 1s infinite linear alternate;
-        animation-delay: .5s;
-      }
-      .dot-flashing::before, .dot-flashing::after {
-        content: '';
-        display: inline-block;
-        position: absolute;
-        top: 0;
-        width: 10px;
-        height: 10px;
-        border-radius: 5px;
-        background-color: var(--secondary-foreground);
-        color: var(--secondary-foreground);
-        animation: dotFlashing 1s infinite alternate;
-      }
-      .dot-flashing::before {
-        left: -15px;
-        animation-delay: 0s;
-      }
-      .dot-flashing::after {
-        left: 15px;
-        animation-delay: 1s;
-      }
-      @keyframes dotFlashing {
-        0% { background-color: var(--secondary-foreground); }
-        50%, 100% { background-color: var(--muted); }
-      }
-    `;
-        document.head.appendChild(style);
+        // Style the typing indicator (if not already in CSS)
+        // This could be moved to main.css for better separation
+        const styleId = 'typing-indicator-style';
+        if (!document.getElementById(styleId)) {
+            const style = document.createElement('style');
+            style.id = styleId;
+            style.textContent = `
+        .typing {
+          padding: 8px 14px;
+          display: inline-block; /* Make it fit content */
+          min-width: 40px; /* Give some base width */
+        }
+        .dot-flashing {
+          display: inline-block;
+          position: relative;
+          width: 8px;
+          height: 8px;
+          border-radius: 5px;
+          background-color: var(--secondary-foreground);
+          color: var(--secondary-foreground);
+          animation: dotFlashing 1s infinite linear alternate;
+          animation-delay: .5s;
+        }
+        .dot-flashing::before, .dot-flashing::after {
+          content: '';
+          display: inline-block;
+          position: absolute;
+          top: 0;
+          width: 8px;
+          height: 8px;
+          border-radius: 5px;
+          background-color: var(--secondary-foreground);
+          color: var(--secondary-foreground);
+          animation: dotFlashing 1s infinite alternate;
+        }
+        .dot-flashing::before {
+          left: -12px;
+          animation-delay: 0s;
+        }
+        .dot-flashing::after {
+          left: 12px;
+          animation-delay: 1s;
+        }
+        @keyframes dotFlashing {
+          0% { background-color: var(--secondary-foreground); }
+          50%, 100% { background-color: rgba(var(--secondary-foreground-rgb), 0.3); }
+        }
+      `;
+            document.head.appendChild(style);
+        }
         this.messagesContainer.appendChild(typingDiv);
         this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
         return typingDiv;
-    }
-    /**
-     * Add a message to the chat container
-     */
-    addMessageToChat(role, content) {
-        // Remove welcome and capabilities if this is the first actual exchange
-        if (role === 'user' && this.messagesContainer.querySelector('#welcome-message')) {
-            const welcomeMessage = document.getElementById('welcome-message');
-            const capabilities = document.querySelector('.capabilities');
-            if (welcomeMessage)
-                welcomeMessage.style.display = 'none';
-            if (capabilities)
-                capabilities.style.display = 'none';
-        }
-        const messageDiv = document.createElement('div');
-        messageDiv.classList.add('message', role);
-        if (role === 'assistant') {
-            const contentDiv = document.createElement('div');
-            contentDiv.classList.add('assistant-content');
-            contentDiv.textContent = content;
-            messageDiv.appendChild(contentDiv);
-        }
-        else {
-            messageDiv.textContent = content;
-        }
-        this.messagesContainer.appendChild(messageDiv);
-        this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
-    }
-    /**
-     * Generate a random ID for each chat
-     */
-    generateChatId() {
-        return 'chat_' + Math.random().toString(36).substring(2, 12);
     }
 }
 exports.ChatBar = ChatBar;

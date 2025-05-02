@@ -1,8 +1,9 @@
 // Define interface for exposed API
 export interface IpcApi {
   askQuestion: (question: string) => Promise<string>;
-  toggleWindowSize: () => Promise<void>;
-  createNewChat: () => Promise<{ success: boolean }>;
+  toggleWindowSize: () => void;
+  createNewChat: () => void;
+  hideWindow: () => void;
   on: (channel: string, callback: (...args: any[]) => void) => (() => void) | undefined;
   requestMicrophonePermission: () => Promise<boolean>;
   getAudioDevices: () => Promise<AudioDevice[]>;
@@ -30,4 +31,4 @@ declare global {
   interface Window {
     api: IpcApi;
   }
-} 
+}

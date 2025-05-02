@@ -1,5 +1,4 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { IpcApi } from './types';
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -8,12 +7,11 @@ contextBridge.exposeInMainWorld(
     on: (channel: string, callback: (...args: any[]) => void) => {
       // Whitelist channels
       const validChannels = [
-        'new-chat', 
+        'new-chat',
         'audio-recording-started', 
         'audio-recording-stopped'
       ];
       if (validChannels.includes(channel)) {
-        // Remove the event listener to avoid memory leaks
         const subscription = (_event: any, ...args: any[]) => callback(...args);
         ipcRenderer.on(channel, subscription);
         
@@ -27,8 +25,9 @@ contextBridge.exposeInMainWorld(
     
     // General app functions
     askQuestion: (question: string) => ipcRenderer.invoke('ask-question', question),
-    toggleWindowSize: () => ipcRenderer.invoke('toggle-window-size'),
-    createNewChat: () => ipcRenderer.invoke('create-new-chat'),
+    toggleWindowSize: () => ipcRenderer.send('toggle-window-size'),
+    hideWindow: () => ipcRenderer.send('hide-window'),
+    createNewChat: () => ipcRenderer.send('create-new-chat'),
     
     // Audio-related functions
     requestMicrophonePermission: () => ipcRenderer.invoke('request-microphone-permission'),
@@ -39,11 +38,5 @@ contextBridge.exposeInMainWorld(
     // Toolbar recording functions
     toggleRecordingFromExternal: () => ipcRenderer.invoke('toggle-recording-from-external'),
     getRecordingStatus: () => ipcRenderer.invoke('get-recording-status')
-  } as IpcApi);
-
-// Add this to global types
-declare global {
-  interface Window {
-    api: IpcApi;
   }
-} 
+);
