@@ -35,7 +35,7 @@
     "appId": "com.agentpal.app",
     "mac": {
       "category": "public.app-category.productivity",
-      "icon": "assets/PAL Transparent Logo.png",
+      "icon": "assets/PAL Logo.png",
       "darkModeSupport": true
     },
     "files": [

@@ -78,7 +78,7 @@ function createWindow() {
         skipTaskbar: false, // Show in taskbar/dock
         transparent: true, // Make window transparent
         alwaysOnTop: true, // Keep window on top
-        icon: path.join(__dirname, '../assets', 'PAL Transparent Logo.png'),
+        icon: path.join(__dirname, '../assets', 'PAL Logo.png'),
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
@@ -87,7 +87,7 @@ function createWindow() {
     });
     // Set the app dock icon on macOS
     if (process.platform === 'darwin') {
-        electron_1.app.dock.setIcon(electron_1.nativeImage.createFromPath(path.join(__dirname, '../assets', 'PAL Transparent Logo.png')));
+        electron_1.app.dock.setIcon(electron_1.nativeImage.createFromPath(path.join(__dirname, '../assets', 'PAL Logo.png')));
     }
     // Position window at the bottom center of the screen (above dock)
     positionWindowAboveDock(mainWindow, windowConfig.small.width, windowConfig.small.height);
@@ -113,8 +113,8 @@ function createTray() {
     // Try to use both PNG and SVG for best compatibility
     let trayIcon;
     // Try PNG first (often works better for tray icons)
-    const pngPath = path.join(__dirname, '../assets', 'PAL Transparent Logo.png');
-    const svgPath = path.join(__dirname, '../assets', 'PAL Transparent Logo.svg');
+    const pngPath = path.join(__dirname, '../assets', 'PAL Logo.png');
+    const svgPath = path.join(__dirname, '../assets', 'PAL Logo.svg');
     try {
         if (fs.existsSync(pngPath)) {
             console.log('Loading tray icon from PNG:', pngPath);
