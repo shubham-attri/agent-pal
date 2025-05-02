@@ -1,0 +1,38 @@
+# Agent Pal
+
+An AI-powered knowledge graph and question answering system built with Electron.
+
+## Features (Planned)
+
+- Question answering interface
+- Data ingestion from multiple sources
+- Knowledge graph integration
+- Agent tools for automation
+
+## Setup
+
+1. Install dependencies:
+   ```
+   npm install
+   ```
+
+2. Run the application:
+   ```
+   npm start
+   ```
+
+## Project Structure
+
+- `main.js` - Main process entry point
+- `preload.js` - Secure context bridge
+- `renderer.js` - UI interaction logic
+- `index.html` - Application UI
+
+## Development
+
+This is a work in progress. Future development will include:
+
+1. Integration with AI models
+2. Knowledge graph implementation
+3. Data ingestion pipelines
+4. Agent tools for advanced capabilities
