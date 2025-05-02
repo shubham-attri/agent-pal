@@ -23,10 +23,13 @@ An AI-powered knowledge graph and question answering system built with Electron.
 
 ## Project Structure
 
-- `main.js` - Main process entry point
-- `preload.js` - Secure context bridge
-- `renderer.js` - UI interaction logic
-- `index.html` - Application UI
+- `src/main.ts` - Main Electron process
+- `src/preload.ts` - Secure context bridge
+- `src/ui/index.ts` - UI entry point
+- `src/ui/components/ChatBar.ts` - Chat interface component
+- `src/ui/styles/main.css` - Application styles
+- `src/ui/index.html` - Application UI
+- `assets/` - Images and icons
 
 ## Development
 
