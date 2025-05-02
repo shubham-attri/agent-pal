@@ -9,8 +9,7 @@ electron_1.contextBridge.exposeInMainWorld('api', {
         const validChannels = [
             'new-chat',
             'audio-recording-started',
-            'audio-recording-stopped',
-            'blackhole-setup-complete'
+            'audio-recording-stopped'
         ];
         if (validChannels.includes(channel)) {
             // Remove the event listener to avoid memory leaks
@@ -30,10 +29,8 @@ electron_1.contextBridge.exposeInMainWorld('api', {
     // Audio-related functions
     requestMicrophonePermission: () => electron_1.ipcRenderer.invoke('request-microphone-permission'),
     getAudioDevices: () => electron_1.ipcRenderer.invoke('get-audio-devices'),
-    getAudioOutputDevices: () => electron_1.ipcRenderer.invoke('get-audio-output-devices'),
     startAudioRecording: (deviceId) => electron_1.ipcRenderer.invoke('start-audio-recording', deviceId),
     stopAudioRecording: () => electron_1.ipcRenderer.invoke('stop-audio-recording'),
-    setupBlackhole: (outputDeviceName) => electron_1.ipcRenderer.invoke('setup-blackhole', outputDeviceName),
     // Toolbar recording functions
     toggleRecordingFromExternal: () => electron_1.ipcRenderer.invoke('toggle-recording-from-external'),
     getRecordingStatus: () => electron_1.ipcRenderer.invoke('get-recording-status')

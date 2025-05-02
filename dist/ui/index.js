@@ -10,14 +10,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatBar = new ChatBar_1.ChatBar();
     // Initialize the AudioRecorder component
     const audioRecorder = new AudioRecorder_1.AudioRecorder();
-    // Set up keyboard shortcut for BlackHole setup (Command+Shift+B)
-    document.addEventListener('keydown', (e) => {
-        // Command+Shift+B on Mac
-        if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'b') {
-            audioRecorder.setupBlackhole();
-            e.preventDefault();
-        }
-    });
     // Store in window for debugging purposes (can be removed in production)
     window.__chatBar = chatBar;
     window.__audioRecorder = audioRecorder;

@@ -6,10 +6,8 @@ export interface IpcApi {
   on: (channel: string, callback: (...args: any[]) => void) => (() => void) | undefined;
   requestMicrophonePermission: () => Promise<boolean>;
   getAudioDevices: () => Promise<AudioDevice[]>;
-  getAudioOutputDevices: () => Promise<AudioOutputDevice[]>;
   startAudioRecording: (deviceId?: string) => Promise<boolean>;
   stopAudioRecording: () => Promise<boolean>;
-  setupBlackhole: (outputDeviceName?: string) => Promise<boolean>;
   toggleRecordingFromExternal: () => Promise<boolean>;
   getRecordingStatus: () => Promise<boolean>;
 }
@@ -18,15 +16,6 @@ export interface IpcApi {
 export interface AudioDevice {
   id: string;
   name: string;
-  isBlackHole: boolean;
-}
-
-// Audio output device interface
-export interface AudioOutputDevice {
-  id: string;
-  name: string;
-  isBlackHole: boolean;
-  isDefault: boolean;
 }
 
 // Audio recording response interface

@@ -10,8 +10,7 @@ contextBridge.exposeInMainWorld(
       const validChannels = [
         'new-chat', 
         'audio-recording-started', 
-        'audio-recording-stopped',
-        'blackhole-setup-complete'
+        'audio-recording-stopped'
       ];
       if (validChannels.includes(channel)) {
         // Remove the event listener to avoid memory leaks
@@ -34,10 +33,8 @@ contextBridge.exposeInMainWorld(
     // Audio-related functions
     requestMicrophonePermission: () => ipcRenderer.invoke('request-microphone-permission'),
     getAudioDevices: () => ipcRenderer.invoke('get-audio-devices'),
-    getAudioOutputDevices: () => ipcRenderer.invoke('get-audio-output-devices'),
     startAudioRecording: (deviceId?: string) => ipcRenderer.invoke('start-audio-recording', deviceId),
     stopAudioRecording: () => ipcRenderer.invoke('stop-audio-recording'),
-    setupBlackhole: (outputDeviceName?: string) => ipcRenderer.invoke('setup-blackhole', outputDeviceName),
     
     // Toolbar recording functions
     toggleRecordingFromExternal: () => ipcRenderer.invoke('toggle-recording-from-external'),
