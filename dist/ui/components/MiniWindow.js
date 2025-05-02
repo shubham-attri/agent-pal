@@ -9,10 +9,10 @@ class MiniWindow {
         this.container = null;
         this.isVisible = false; // Made public for ChatBar check
         this.processingQuestion = false;
-        this.toolStatus = null;
+        this.toolStatusContainer = null; // Renamed from toolStatus
         this.answerContainer = null;
         this.currentToolStep = '';
-        this.steps = [];
+        this.steps = []; // Store step elements
         this.closeButton = null;
         this.expandButton = null;
         this.lastQuestion = '';
@@ -21,6 +21,12 @@ class MiniWindow {
         this.currentAnswer = null;
         // Callback for the expand action, set by renderer.ts
         this.onExpandCallback = null;
+        // --- SVG Icons ---
+        this.icons = {
+            spinner: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-loader-circle spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`,
+            check: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check-circle"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>`,
+            error: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x-circle"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>`
+        };
         this.createMiniWindow();
         this.setupEventListeners();
     }
@@ -66,9 +72,9 @@ class MiniWindow {
         const content = document.createElement('div');
         content.className = 'mini-window-content';
         // Tool status section
-        this.toolStatus = document.createElement('div');
-        this.toolStatus.className = 'tool-status';
-        content.appendChild(this.toolStatus);
+        this.toolStatusContainer = document.createElement('div');
+        this.toolStatusContainer.className = 'tool-status'; // Keep the class name
+        content.appendChild(this.toolStatusContainer);
         // Answer container
         this.answerContainer = document.createElement('div');
         this.answerContainer.className = 'mini-window-answer';
@@ -76,162 +82,6 @@ class MiniWindow {
         this.container.appendChild(content);
         // Add to document
         document.body.appendChild(this.container);
-        // Add styles
-        this.addStyles();
-    }
-    /**
-     * Add the required CSS for the component
-     */
-    addStyles() {
-        const styleId = 'mini-window-styles';
-        if (!document.getElementById(styleId)) {
-            const style = document.createElement('style');
-            style.id = styleId;
-            style.textContent = `
-        .mini-window {
-          position: fixed;
-          bottom: 80px; /* Adjust distance from bottom */
-          left: 50%;
-          transform: translateX(-50%);
-          width: 400px;
-          max-height: 400px;
-          background-color: rgba(0, 0, 0, 0.25);
-          border-radius: var(--radius);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-          backdrop-filter: blur(30px);
-          -webkit-backdrop-filter: blur(30px);
-          z-index: 1000;
-          overflow: hidden;
-          transition: opacity 0.3s, transform 0.3s;
-          display: flex;
-          flex-direction: column;
-          font-family: "Jersey 20", sans-serif;
-          opacity: 0;
-          transform: translateX(-50%) translateY(20px); /* Start slightly lower */
-          pointer-events: none; /* Ignore clicks when hidden */
-        }
-        .mini-window.visible {
-            opacity: 1;
-            transform: translateX(-50%) translateY(0);
-            pointer-events: auto; /* Allow clicks when visible */
-        }
-
-        .mini-window-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 12px 16px;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-          background: rgba(24, 26, 27, 0.4);
-          cursor: default; /* Default cursor for header */
-        }
-
-        .mini-window-title {
-          font-weight: 500;
-          font-size: 14px;
-          color: var(--foreground);
-        }
-
-        .mini-window-actions {
-          display: flex;
-          gap: 10px;
-          align-items: center;
-        }
-
-        .mini-window-expand,
-        .mini-window-close {
-          cursor: pointer;
-          width: 24px;
-          height: 24px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 50%;
-          transition: background-color 0.2s;
-          color: var(--muted-foreground);
-          background-color: rgba(60, 60, 60, 0.2);
-        }
-
-        .mini-window-expand:hover,
-        .mini-window-close:hover {
-          background-color: rgba(255, 255, 255, 0.1);
-          color: var(--foreground);
-        }
-
-        .mini-window-close {
-          font-size: 18px;
-        }
-
-        .mini-window-content {
-          padding: 16px;
-          overflow-y: auto;
-          max-height: 350px;
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-          background: linear-gradient(
-            to bottom,
-            rgba(24, 26, 27, 0.3),
-            rgba(37, 38, 39, 0.2)
-          );
-        }
-
-        .tool-status {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-
-        .tool-step {
-          display: flex;
-          align-items: flex-start;
-          gap: 8px;
-          font-size: 13px;
-          padding: 8px 12px;
-          border-radius: calc(var(--radius) - 4px);
-          background-color: rgba(0, 0, 0, 0.2);
-          transition: background-color 0.3s, border-left 0.3s;
-          color: var(--muted-foreground);
-          border-left: 2px solid transparent;
-        }
-
-        .tool-step.active {
-          background-color: rgba(58, 143, 251, 0.2);
-          border-left: 2px solid var(--primary);
-          color: var(--foreground);
-        }
-
-        .tool-step.completed {
-          background-color: rgba(0, 0, 0, 0.15);
-          color: var(--muted-foreground);
-          border-left: 2px solid rgba(255, 255, 255, 0.1);
-        }
-        
-        .tool-step.error {
-            background-color: rgba(255, 80, 80, 0.15);
-            border-left: 2px solid red;
-            color: white;
-        }
-
-        .tool-icon {
-          width: 16px;
-          height: 16px;
-          margin-top: 2px;
-        }
-
-        .mini-window-answer {
-          font-size: 14px;
-          color: var(--foreground);
-          background-color: rgba(0, 0, 0, 0.1);
-          padding: 12px;
-          border-radius: calc(var(--radius) - 4px);
-          white-space: pre-wrap; /* Preserve whitespace and wrap */
-          word-wrap: break-word;
-        }
-      `;
-            document.head.appendChild(style);
-        }
     }
     /**
      * Set up event listeners for close and expand buttons
@@ -289,47 +139,92 @@ class MiniWindow {
         }, 300); // Match transition duration
     }
     /**
-     * Add a status step to the tool status display
-     * @param text The text content of the step
-     * @param status 'active', 'completed', 'error', or 'pending'
+     * Adds a new step to the tool status display.
+     * @param text The description of the step.
+     * @returns The unique ID assigned to this step.
      */
-    addToolStep(text, status = 'pending') {
-        if (!this.toolStatus)
-            return document.createElement('div'); // Should not happen
-        const stepDiv = document.createElement('div');
-        stepDiv.className = 'tool-step';
-        stepDiv.textContent = text;
-        if (status !== 'pending') {
-            stepDiv.classList.add(status);
-        }
-        this.toolStatus.appendChild(stepDiv);
-        return stepDiv;
+    addToolStep(text) {
+        if (!this.toolStatusContainer)
+            return '';
+        const stepId = `step-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        this.currentToolStep = text; // Keep track of the latest step text if needed
+        const stepElement = document.createElement('div');
+        stepElement.className = 'tool-step running'; // Start as running
+        stepElement.dataset.stepId = stepId;
+        const iconElement = document.createElement('div');
+        iconElement.className = 'tool-step-icon';
+        iconElement.innerHTML = this.icons.spinner;
+        const textElement = document.createElement('div');
+        textElement.className = 'tool-step-text';
+        textElement.textContent = text;
+        stepElement.appendChild(iconElement);
+        stepElement.appendChild(textElement);
+        // Add the new step element to the DOM
+        this.toolStatusContainer.appendChild(stepElement);
+        // Store the step details
+        this.steps.push({ id: stepId, element: stepElement, status: 'running' });
+        // Optionally, mark previous steps as completed if needed (depends on desired UX)
+        // this.markPreviousStepsCompleted(stepId);
+        return stepId; // Return the ID so it can be updated later
     }
     /**
-     * Update the status of the last added tool step
-     * @param status The new status for the last step
+     * Updates the status of a specific tool step.
+     * @param stepId The ID of the step to update (returned by addToolStep).
+     * @param status The new status ('completed' or 'error').
+     * @param newText Optional new text for the step.
      */
-    updateLastToolStep(status) {
-        if (!this.toolStatus || !this.toolStatus.lastElementChild)
+    updateToolStepStatus(stepId, status, newText) {
+        const step = this.steps.find(s => s.id === stepId);
+        if (!step) {
+            console.warn(`MiniWindow: Step with ID ${stepId} not found for update.`);
             return;
-        const lastStep = this.toolStatus.lastElementChild;
-        lastStep.classList.remove('active', 'completed', 'error', 'pending'); // Remove existing status
-        lastStep.classList.add(status);
+        }
+        // Update internal state
+        step.status = status;
+        // Update DOM element
+        step.element.classList.remove('running');
+        step.element.classList.add(status); // Add 'completed' or 'error' class
+        const iconElement = step.element.querySelector('.tool-step-icon');
+        if (iconElement) {
+            iconElement.innerHTML = status === 'completed' ? this.icons.check : this.icons.error;
+        }
+        if (newText) {
+            const textElement = step.element.querySelector('.tool-step-text');
+            if (textElement) {
+                textElement.textContent = newText;
+            }
+        }
     }
     /**
-     * Clear all tool steps and answer content
+     * Sets the final answer in the mini window.
      */
-    clearContent() {
-        if (this.toolStatus) {
-            this.toolStatus.innerHTML = '';
+    setAnswer(answer) {
+        this.lastAnswer = answer;
+        this.currentAnswer = answer;
+        if (this.answerContainer) {
+            this.answerContainer.textContent = answer;
+            // Mark all steps as completed visually if an answer is set?
+            // this.steps.forEach(step => this.updateToolStepStatus(step.id, 'completed'));
+        }
+        this.processingQuestion = false;
+    }
+    /**
+     * Prepares the window for a new question.
+     * @param question The question being asked.
+     */
+    startProcessing(question) {
+        this.lastQuestion = question;
+        this.currentQuestion = question;
+        this.processingQuestion = true;
+        this.steps = []; // Clear previous steps array
+        // Clear UI elements
+        if (this.toolStatusContainer) {
+            this.toolStatusContainer.innerHTML = ''; // Clear previous step elements
         }
         if (this.answerContainer) {
-            this.answerContainer.innerHTML = '';
-            this.answerContainer.style.display = 'none'; // Hide answer area initially
+            this.answerContainer.textContent = ''; // Clear previous answer
         }
-        this.steps = [];
-        this.lastQuestion = '';
-        this.lastAnswer = '';
+        this.show();
     }
     /**
      * Process a new question: show window, call API, display results.
@@ -338,12 +233,8 @@ class MiniWindow {
     async processQuestion(question) {
         if (this.processingQuestion || !this.container)
             return;
-        this.processingQuestion = true;
-        this.lastQuestion = question;
-        this.currentQuestion = question;
-        this.clearContent();
-        this.show();
-        const processingStep = this.addToolStep('Processing query...', 'active');
+        this.startProcessing(question);
+        const processingStep = this.addToolStep('Processing query...');
         try {
             // TODO: Add actual tool call steps/updates if the API provides them
             // For now, just simulate a call
@@ -352,20 +243,16 @@ class MiniWindow {
             // this.updateLastToolStep('completed');
             // Call the actual backend
             const answer = await window.api.askQuestion(question);
-            this.lastAnswer = answer;
-            this.currentAnswer = answer;
-            this.updateLastToolStep('completed'); // Mark 'Processing query...' as completed
-            // Display the answer
-            if (this.answerContainer) {
-                this.answerContainer.textContent = answer;
-                this.answerContainer.style.display = 'block';
-            }
+            this.setAnswer(answer);
+            this.updateToolStepStatus(processingStep, 'completed'); // Mark 'Processing query...' as completed
         }
         catch (error) {
             console.error('Error processing question:', error);
-            this.updateLastToolStep('error'); // Mark 'Processing query...' as error
+            this.updateToolStepStatus(processingStep, 'error'); // Mark 'Processing query...' as error
             const errorMsg = error instanceof Error ? error.message : 'An unknown error occurred.';
-            this.addToolStep(`Error: ${errorMsg}`, 'error');
+            // Correct way to add an error step
+            const errorStepId = this.addToolStep(`Error: ${errorMsg}`); // 1. Add step with text
+            this.updateToolStepStatus(errorStepId, 'error'); // 2. Update status to error
             // Optionally display error in answer container
             if (this.answerContainer) {
                 this.answerContainer.textContent = `Error: ${errorMsg}`;

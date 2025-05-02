@@ -26,6 +26,7 @@
   --input: rgba(82, 82, 82, 0.2);
   --ring: #3a8ffb;
   --radius: 0.75rem;
+  --success: #34c759; /* Define --success color */
 }
 
 * {
@@ -425,4 +426,178 @@ body.expanded .chat-container {
 
 .recording-status.error {
   background-color: rgba(220, 53, 69, 0.8); /* Red background for errors */
-} 
+}
+
+/* ======================================
+   MiniWindow Styles (Moved from JS)
+   ====================================== */
+
+.mini-window {
+  position: fixed;
+  bottom: 80px; /* Adjust distance from bottom */
+  left: 50%;
+  transform: translateX(-50%);
+  width: 400px;
+  max-height: 400px;
+  background-color: rgba(0, 0, 0, 0.25);
+  border-radius: var(--radius);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  z-index: 1000;
+  overflow: hidden;
+  transition: opacity 0.3s, transform 0.3s;
+  display: flex;
+  flex-direction: column;
+  font-family: "Jersey 20", sans-serif; /* Reconsider font later if needed */
+  opacity: 0;
+  transform: translateX(-50%) translateY(20px); /* Start slightly lower */
+  pointer-events: none; /* Ignore clicks when hidden */
+}
+
+.mini-window.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto; /* Allow clicks when visible */
+}
+
+.mini-window-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(24, 26, 27, 0.4);
+  cursor: default; /* Default cursor for header */
+}
+
+.mini-window-title {
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--foreground);
+}
+
+.mini-window-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.mini-window-expand,
+.mini-window-close {
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background-color 0.2s;
+  color: var(--muted-foreground);
+  background-color: rgba(60, 60, 60, 0.2);
+}
+
+.mini-window-expand:hover,
+.mini-window-close:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: var(--foreground);
+}
+
+.mini-window-close {
+  font-size: 18px;
+}
+
+.mini-window-content {
+  padding: 16px;
+  overflow-y: auto;
+  max-height: 350px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: linear-gradient(
+    to bottom,
+    rgba(24, 26, 27, 0.3),
+    rgba(37, 38, 39, 0.2)
+  );
+}
+
+.tool-status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px; /* Slightly reduce gap between steps */
+}
+
+.tool-step {
+  display: flex;
+  align-items: center; /* Vertically align icon and text */
+  gap: 8px;
+  padding: 4px 0; /* Adjust padding */
+  font-size: 13px;
+  color: var(--muted-foreground);
+  transition: color 0.3s;
+}
+
+.tool-step-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0; /* Prevent icon from shrinking */
+  display: flex; /* Center SVG inside */
+  align-items: center;
+  justify-content: center;
+}
+
+.tool-step-icon svg {
+  display: block; /* Ensure SVG behaves like a block */
+}
+
+.tool-step.running .tool-step-icon {
+  color: var(--primary); /* Or a neutral color */
+  animation: spin 1.5s linear infinite;
+}
+
+.tool-step.running .tool-step-text {
+  color: var(--foreground); /* Make running text less muted */
+}
+
+.tool-step.completed .tool-step-icon {
+  color: var(--success); /* Define --success color if needed, e.g., green */
+}
+
+.tool-step.completed .tool-step-text {
+  color: var(--muted-foreground); /* Keep completed text muted */
+  /* text-decoration: line-through; */ /* Optional: strike-through */
+}
+
+.tool-step.error .tool-step-icon {
+  color: var(--destructive); /* Define --destructive color if needed, e.g., red */
+}
+
+.tool-step.error .tool-step-text {
+  color: var(--destructive); /* Make error text stand out */
+}
+
+.tool-step-text {
+  flex-grow: 1;
+}
+
+.mini-window-answer {
+  margin-top: 12px; /* Add more space above answer */
+  padding: 12px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  font-size: 14px;
+  color: var(--foreground);
+  white-space: pre-wrap; /* Preserve line breaks in answer */
+  word-wrap: break-word;
+}
+
+/* Spinner Animation */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
