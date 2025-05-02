@@ -28,6 +28,7 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
+    "find-process": "^1.4.10",
     "node-audiorecorder": "^3.0.0"
   },
   "build": {

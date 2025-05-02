@@ -55,13 +55,15 @@ const windowConfig = {
         resizable: true
     }
 };
-// Audio recording directory
-const recordingsDir = path.join(electron_1.app.getPath('userData'), 'recordings');
+// Define audio recording path more directly to save in Agent Pal folder
+const appDir = electron_1.app.getAppPath();
+const recordingsDir = path.join(appDir, 'recordings');
 // Create recordings directory if it doesn't exist
 function ensureRecordingsDirExists() {
     if (!fs.existsSync(recordingsDir)) {
         fs.mkdirSync(recordingsDir, { recursive: true });
     }
+    console.log(`Recordings will be saved to: ${recordingsDir}`);
 }
 function createWindow() {
     // Get display size
@@ -570,25 +572,55 @@ function startAudioRecording(deviceId = '') {
         const micAudioFile = path.join(sessionDir, `microphone.wav`);
         const mixedAudioFile = path.join(sessionDir, `mixed-recording.wav`);
         try {
-            // First get a list of available audio devices to confirm they exist
+            // First get a list of available audio devices
             const availableDevices = await getAudioDevices();
             console.log('Available audio devices for recording:', availableDevices.map(d => d.name).join(', '));
-            // Check if BlackHole is among the available devices
-            const hasBlackHole = availableDevices.some(device => device.name.includes('BlackHole'));
-            if (!hasBlackHole) {
-                console.warn('BlackHole audio device not found among available devices');
+            // Specifically look for available input devices with ffmpeg
+            console.log('Listing available audio devices for ffmpeg:');
+            const listProcess = (0, child_process_1.spawn)('ffmpeg', ['-f', 'avfoundation', '-list_devices', 'true', '-i', '']);
+            let deviceList = '';
+            listProcess.stderr.on('data', (data) => {
+                const output = data.toString();
+                deviceList += output;
+                console.log(`ffmpeg device list: ${output}`);
+            });
+            // Wait for listing to complete
+            await new Promise(resolve => {
+                listProcess.on('close', () => resolve(null));
+            });
+            // Parse the ffmpeg device list to get device indices
+            let blackholeIndex = '';
+            let microphoneIndex = '';
+            const audioDeviceLines = deviceList.split('\n')
+                .filter(line => line.includes('[AVFoundation indev @') && !line.includes('video devices'));
+            const deviceEntries = deviceList.split('\n')
+                .filter(line => line.match(/\[\d+\]/))
+                .map(line => {
+                const match = line.match(/\[(\d+)\] (.*)/);
+                return match ? { index: match[1], name: match[2].trim() } : null;
+            })
+                .filter(entry => entry !== null);
+            console.log('Detected devices:', deviceEntries);
+            // Find BlackHole device
+            const blackholeDevice = deviceEntries.find(d => d?.name.includes('BlackHole'));
+            if (blackholeDevice) {
+                blackholeIndex = blackholeDevice.index;
+                console.log(`Found BlackHole device at index: ${blackholeIndex}`);
             }
-            // For debugging, print the selected device info
-            let micDeviceId = deviceId;
-            if (!micDeviceId) {
+            // Find microphone device (either user-selected or default)
+            let micDevice = null;
+            if (deviceId) {
+                micDevice = deviceEntries.find(d => d?.name === deviceId);
+            }
+            else {
                 // Try to find a microphone device
-                const micDevice = availableDevices.find(d => d.name.includes('Microphone') ||
-                    d.name.includes('mic') ||
-                    d.name.includes('input'));
-                if (micDevice) {
-                    micDeviceId = micDevice.id;
-                    console.log(`Selected microphone: ${micDevice.name}`);
-                }
+                micDevice = deviceEntries.find(d => d?.name.includes('Microphone') ||
+                    d?.name.includes('mic') ||
+                    (d?.name.includes('Built-in') && !d?.name.includes('Output')));
+            }
+            if (micDevice) {
+                microphoneIndex = micDevice.index;
+                console.log(`Found microphone device at index: ${microphoneIndex}`);
             }
             let recordingProcesses = 0;
             let completedProcesses = 0;
@@ -609,22 +641,12 @@ function startAudioRecording(deviceId = '') {
                     updateTrayMenu();
                 }
             };
-            // On macOS, list available devices first to help with debugging
-            console.log('Listing available audio devices for ffmpeg:');
-            const listProcess = (0, child_process_1.spawn)('ffmpeg', ['-f', 'avfoundation', '-list_devices', 'true', '-i', '']);
-            listProcess.stderr.on('data', (data) => {
-                console.log(`ffmpeg device list: ${data.toString()}`);
-            });
-            // Wait for listing to complete
-            await new Promise(resolve => {
-                listProcess.on('close', () => resolve(null));
-            });
             // Start recording system audio (BlackHole)
-            if (hasBlackHole) {
+            if (blackholeIndex) {
                 recordingProcesses++;
                 const systemArgs = [
                     '-f', 'avfoundation',
-                    '-i', ':BlackHole 16ch', // Try to use BlackHole by name
+                    '-i', `:${blackholeIndex}`, // Use found BlackHole index
                     '-ac', '2', // 2 audio channels (stereo)
                     '-ar', '44100', // 44.1 kHz sample rate
                     '-y', // Overwrite output file if it exists
@@ -648,12 +670,15 @@ function startAudioRecording(deviceId = '') {
                     checkAllDone();
                 });
             }
+            else {
+                console.warn('BlackHole device not found for system audio recording');
+            }
             // Start recording microphone
-            if (micDeviceId) {
+            if (microphoneIndex) {
                 recordingProcesses++;
                 const micArgs = [
                     '-f', 'avfoundation',
-                    '-i', micDeviceId, // Use the identified microphone
+                    '-i', microphoneIndex, // Use the identified microphone index
                     '-ac', '1', // 1 audio channel (mono) for mic
                     '-ar', '44100', // 44.1 kHz sample rate
                     '-y', // Overwrite output file if it exists
@@ -661,7 +686,10 @@ function startAudioRecording(deviceId = '') {
                     micAudioFile
                 ];
                 console.log(`Starting microphone recording: ffmpeg ${micArgs.join(' ')}`);
-                const micProcess = (0, child_process_1.spawn)('ffmpeg', micArgs);
+                // Explicitly just use audio (no video) when recording from microphone
+                const micProcess = (0, child_process_1.spawn)('ffmpeg', micArgs, {
+                    env: { ...process.env, FFREPORT: 'file=mic_recording.log' }
+                });
                 micProcess.stderr.on('data', (data) => {
                     console.log(`Microphone audio info: ${data.toString()}`);
                 });
@@ -677,17 +705,33 @@ function startAudioRecording(deviceId = '') {
                     checkAllDone();
                 });
             }
-            // If no specific recording method was started, try a fallback method
-            if (recordingProcesses === 0) {
+            else {
+                console.warn('Microphone device not found');
+            }
+            // If neither specific recording method was started, try a fallback method
+            if (recordingProcesses === 0 || (!blackholeIndex && !microphoneIndex)) {
                 recordingProcesses++;
+                console.log('Using fallback recording method (attempting to record default devices)');
+                // Try different device specifications for maximum compatibility
+                const fallbackOptions = [
+                    // Try MacOS default indices (usually 0 is mic, 1 is BlackHole if installed)
+                    ['0:1', 'microphone-and-system'],
+                    // Just default microphone 
+                    ['0', 'microphone-only'],
+                    // Just default input (which might be BlackHole)
+                    [':0', 'system-only']
+                ];
+                // Use the first fallback option
+                const [deviceSpec, recordingType] = fallbackOptions[0];
+                const fallbackFile = path.join(sessionDir, `${recordingType}.wav`);
                 const fallbackArgs = [
                     '-f', 'avfoundation',
-                    '-i', deviceId || ':0', // Use default device if not specified
+                    '-i', deviceSpec,
                     '-ac', '2',
                     '-ar', '44100',
                     '-y',
                     '-loglevel', 'info',
-                    mixedAudioFile
+                    fallbackFile
                 ];
                 console.log(`Starting fallback audio recording: ffmpeg ${fallbackArgs.join(' ')}`);
                 audioProcess = (0, child_process_1.spawn)('ffmpeg', fallbackArgs);
@@ -696,6 +740,57 @@ function startAudioRecording(deviceId = '') {
                 });
                 audioProcess.on('error', (err) => {
                     console.error(`Fallback audio error: ${err.message}`);
+                    // If the first fallback fails, try the next one
+                    if (fallbackOptions.length > 1) {
+                        const [nextDeviceSpec, nextRecordingType] = fallbackOptions[1];
+                        const nextFallbackFile = path.join(sessionDir, `${nextRecordingType}.wav`);
+                        console.log(`Trying alternate fallback: ffmpeg -f avfoundation -i ${nextDeviceSpec} ...`);
+                        const nextArgs = [
+                            '-f', 'avfoundation',
+                            '-i', nextDeviceSpec,
+                            '-ac', '2',
+                            '-ar', '44100',
+                            '-y',
+                            '-loglevel', 'info',
+                            nextFallbackFile
+                        ];
+                        // Try the next fallback option
+                        audioProcess = (0, child_process_1.spawn)('ffmpeg', nextArgs);
+                        // Set up error handlers for this process too
+                        audioProcess.stderr.on('data', (data) => {
+                            console.log(`Alt fallback info: ${data.toString()}`);
+                        });
+                        audioProcess.on('error', (altErr) => {
+                            console.error(`Alt fallback error: ${altErr.message}`);
+                            audioRecording = false;
+                            audioProcess = null;
+                            if (mainWindow) {
+                                mainWindow.webContents.send('audio-recording-stopped', {
+                                    filePath: sessionDir,
+                                    error: altErr.message
+                                });
+                            }
+                            updateTrayMenu();
+                            hasError = true;
+                            reject(altErr);
+                        });
+                        audioProcess.on('close', (code) => {
+                            audioRecording = false;
+                            audioProcess = null;
+                            if (mainWindow) {
+                                mainWindow.webContents.send('audio-recording-stopped', {
+                                    filePath: sessionDir,
+                                    success: code === 0
+                                });
+                            }
+                            updateTrayMenu();
+                            if (code !== 0) {
+                                hasError = true;
+                            }
+                            checkAllDone();
+                        });
+                        return; // Return to prevent the initial audioProcess error from being handled further
+                    }
                     audioRecording = false;
                     audioProcess = null;
                     if (mainWindow) {
@@ -721,10 +816,13 @@ function startAudioRecording(deviceId = '') {
                     updateTrayMenu();
                     if (code !== 0) {
                         hasError = true;
-                        fs.rmdir(sessionDir, { recursive: true }, (err) => {
-                            if (err)
-                                console.error(`Failed to remove failed recording directory: ${err.message}`);
-                        });
+                        // Only clean up directory if this was the only recording process and it failed
+                        if (recordingProcesses === 1) {
+                            fs.rmdir(sessionDir, { recursive: true }, (err) => {
+                                if (err)
+                                    console.error(`Failed to remove failed recording directory: ${err.message}`);
+                            });
+                        }
                     }
                     checkAllDone();
                 });
@@ -739,11 +837,17 @@ Recording Session: ${timestamp}
 ------------------------------
 This folder contains audio recordings captured by Agent Pal:
 
-- system-audio.wav: System audio captured through BlackHole
-- microphone.wav: Audio captured from your microphone
+- system-audio.wav: System audio captured through BlackHole (index: ${blackholeIndex || 'not found'})
+- microphone.wav: Audio captured from your microphone (index: ${microphoneIndex || 'not found'})
 - mixed-recording.wav: Mixed audio (if available)
 
-Available devices: ${availableDevices.map(d => d.name).join(', ')}
+Available devices detected by ffmpeg:
+${deviceEntries.map(d => `- [${d?.index}] ${d?.name}`).join('\n')}
+
+Available audio devices:
+${availableDevices.length > 0
+                ? availableDevices.map(d => `- ${d.name}`).join('\n')
+                : '- No devices detected from system_profiler'}
 `;
             fs.writeFileSync(path.join(sessionDir, 'README.txt'), readmeContent);
             resolve(true);
@@ -765,7 +869,7 @@ Available devices: ${availableDevices.map(d => d.name).join(', ')}
 // Stop recording audio
 function stopAudioRecording() {
     return new Promise((resolve) => {
-        if (!audioRecording || !audioProcess) {
+        if (!audioRecording) {
             console.log('No active recording to stop');
             if (mainWindow) {
                 mainWindow.webContents.send('audio-recording-stopped', {
@@ -779,36 +883,91 @@ function stopAudioRecording() {
         }
         try {
             console.log('Attempting to stop audio recording process');
-            // Send SIGTERM to gracefully stop the recording process
-            audioProcess.kill('SIGTERM');
-            // Set a timeout in case the process doesn't exit
-            const killTimeout = setTimeout(() => {
-                if (audioProcess) {
-                    console.log('Recording process did not exit, forcing termination');
+            // Use multiple methods to stop ffmpeg processes
+            const stopMethods = [
+                // Method 1: Try the direct reference if we have it
+                () => {
+                    if (audioProcess) {
+                        try {
+                            console.log('Stopping audio process via direct reference');
+                            audioProcess.kill('SIGTERM');
+                            return true;
+                        }
+                        catch (e) {
+                            console.error('Failed to stop via direct reference:', e);
+                            return false;
+                        }
+                    }
+                    return false;
+                },
+                // Method 2: Try find-process module
+                async () => {
                     try {
-                        audioProcess.kill('SIGKILL');
+                        const findProcess = require('find-process');
+                        const processList = await findProcess('name', 'ffmpeg');
+                        if (processList.length > 0) {
+                            console.log(`Found ${processList.length} ffmpeg processes to stop`);
+                            // Kill all ffmpeg processes
+                            processList.forEach((proc) => {
+                                try {
+                                    console.log(`Stopping ffmpeg process with PID ${proc.pid}`);
+                                    process.kill(proc.pid, 'SIGTERM');
+                                }
+                                catch (e) {
+                                    console.error(`Error killing process ${proc.pid}:`, e);
+                                }
+                            });
+                            return true;
+                        }
+                        return false;
                     }
                     catch (e) {
-                        console.error('Error killing process:', e);
+                        console.error('Failed to find ffmpeg processes:', e);
+                        return false;
                     }
-                    audioRecording = false;
-                    audioProcess = null;
+                },
+                // Method 3: Use pkill command directly
+                async () => {
+                    try {
+                        console.log('Trying pkill to stop ffmpeg');
+                        const pkillProcess = (0, child_process_1.spawn)('pkill', ['-f', 'ffmpeg']);
+                        return new Promise(resolve => {
+                            pkillProcess.on('close', (code) => {
+                                if (code === 0) {
+                                    console.log('Successfully stopped ffmpeg processes via pkill');
+                                    resolve(true);
+                                }
+                                else {
+                                    console.log(`pkill exited with code ${code}`);
+                                    resolve(false);
+                                }
+                            });
+                        });
+                    }
+                    catch (e) {
+                        console.error('pkill failed:', e);
+                        return false;
+                    }
+                }
+            ];
+            // Try each method in sequence
+            Promise.all(stopMethods.map(method => method()))
+                .then(() => {
+                // Reset state regardless
+                audioRecording = false;
+                audioProcess = null;
+                // Notify renderer after a short delay to allow processes to clean up
+                setTimeout(() => {
                     if (mainWindow) {
                         mainWindow.webContents.send('audio-recording-stopped', {
                             filePath: '',
-                            success: false,
-                            error: 'Recording process timed out'
+                            success: true
                         });
                     }
                     updateTrayMenu();
-                }
-            }, 5000); // 5 second timeout
-            // Clear the timeout when the process exits
-            audioProcess.on('close', () => {
-                clearTimeout(killTimeout);
+                    resolve(true);
+                }, 500);
             });
-            // The 'close' event handler will set audioRecording to false
-            resolve(true);
         }
         catch (error) {
             console.error('Error stopping recording:', error);
@@ -863,137 +1022,92 @@ async function getAudioOutputDevices() {
 async function parseAudioOutputDevices(output) {
     // Log the complete output for debugging
     console.log('Raw audio device output:', output);
-    try {
-        // For macOS, try direct approach to get audio devices using system command
-        // This is a more reliable approach for macOS to get output devices
-        const result = await new Promise((resolve, reject) => {
-            const command = 'osascript';
-            const args = [
-                '-e',
-                `tell application "System Events"
-          set outputDevices to a reference to (audio output devices whose enabled is true)
-          set deviceList to {}
-          
-          repeat with aDevice in outputDevices
-            set deviceName to name of aDevice
-            set isDefault to (output muted of aDevice is false)
-            set deviceInfo to {name:deviceName, id:deviceName, isDefault:isDefault, isBlackHole:(deviceName contains "BlackHole")}
-            copy deviceInfo to the end of deviceList
-          end repeat
-          
-          return deviceList
-        end tell`
-            ];
-            const process = (0, child_process_1.spawn)(command, args);
-            let stdout = '';
-            let stderr = '';
-            process.stdout.on('data', (data) => {
-                stdout += data.toString();
-            });
-            process.stderr.on('data', (data) => {
-                stderr += data.toString();
-            });
-            process.on('close', (code) => {
-                if (code === 0) {
-                    try {
-                        // Clean and parse AppleScript output
-                        const cleanOutput = stdout.trim()
-                            .replace(/^\{|\}$/g, '') // Remove outer braces
-                            .replace(/\{/g, '[') // Replace inner opening braces
-                            .replace(/\}/g, ']'); // Replace inner closing braces
-                        // Replace AppleScript property notation with JSON
-                        const jsonString = cleanOutput
-                            .replace(/([a-zA-Z0-9]+):/g, '"$1":') // Convert property names to JSON format
-                            .replace(/:([a-zA-Z0-9]+)/g, ':"$1"'); // Add quotes to string values
-                        // Parse the JSON
-                        const parsed = JSON.parse(`[${jsonString}]`);
-                        console.log('Parsed output devices:', parsed);
-                        resolve(parsed);
-                    }
-                    catch (e) {
-                        console.error('Failed to parse AppleScript output:', e);
-                        // Fallback method - direct parsing
-                        fallbackParseDevices(output).then(resolve).catch(reject);
-                    }
-                }
-                else {
-                    console.error(`AppleScript error: ${stderr}`);
-                    // Fallback to the original method
-                    fallbackParseDevices(output).then(resolve).catch(reject);
-                }
-            });
-        });
-        return result;
-    }
-    catch (error) {
-        console.error('Error in parseAudioOutputDevices:', error);
-        return fallbackParseDevices(output);
-    }
-}
-// Fallback function to parse device output directly
-async function fallbackParseDevices(output) {
+    // Extract device details directly from system_profiler output
     const devices = [];
-    // Look for output devices
-    const lines = output.split('\n');
-    let currentDevice = null;
-    let isOutput = false;
-    for (const line of lines) {
-        if (line.includes('Name:')) {
-            if (currentDevice && isOutput) {
-                devices.push(currentDevice);
+    // Split the output by device sections
+    const deviceSections = output.split('\n\n').filter(section => section.trim() !== '');
+    for (const section of deviceSections) {
+        // Only process sections that look like audio devices
+        if (section.includes('Channels:')) {
+            try {
+                // Extract device name - first line of the section
+                const firstLine = section.split('\n')[0].trim();
+                const name = firstLine.replace(':', '').trim();
+                if (name && name !== 'Audio:' && name !== 'Devices:') {
+                    const isDefault = section.includes('Default Output Device: Yes') ||
+                        section.includes('Default System Output Device: Yes');
+                    const isBlackHole = name.includes('BlackHole');
+                    const isMultiOutput = name.includes('Multi-Output');
+                    devices.push({
+                        name,
+                        id: name,
+                        isDefault,
+                        isBlackHole,
+                        isMultiOutput
+                    });
+                    console.log(`Found output device: ${name} (Default: ${isDefault}, BlackHole: ${isBlackHole}, Multi-Output: ${isMultiOutput})`);
+                }
             }
-            isOutput = false;
-            const name = line.replace('Name:', '').trim();
-            currentDevice = {
-                name,
-                id: name,
-                isBlackHole: name.includes('BlackHole'),
-                isDefault: false
-            };
-        }
-        if (line.includes('Output Channels:') && parseInt(line.replace('Output Channels:', '').trim()) > 0) {
-            isOutput = true;
-        }
-        if (currentDevice && line.includes('Default Output:') && line.includes('Yes')) {
-            currentDevice.isDefault = true;
+            catch (err) {
+                console.error('Error parsing device section:', err);
+            }
         }
     }
-    // Add the last device if it exists and is an output
-    if (currentDevice && isOutput) {
-        devices.push(currentDevice);
-    }
-    // As a last resort, add some known devices if none were found
+    // If no devices detected, try an alternative method
     if (devices.length === 0) {
-        console.log('No devices found, adding fallback devices');
-        devices.push({ name: 'MacBook Pro Speakers', id: 'MacBook Pro Speakers', isDefault: true, isBlackHole: false });
-        devices.push({ name: 'BlackHole 16ch', id: 'BlackHole 16ch', isDefault: false, isBlackHole: true });
+        console.log('No devices found with primary method, trying alternative approach...');
         try {
-            // Try to detect multi-output device using an alternative method
-            const deviceList = await new Promise((resolve) => {
-                const multiCmd = (0, child_process_1.spawn)('osascript', [
+            // Get devices using AppleScript directly
+            const scriptResult = await new Promise((resolve, reject) => {
+                const script = (0, child_process_1.spawn)('osascript', [
                     '-e', 'tell application "System Events" to get name of every audio device'
                 ]);
                 let output = '';
-                multiCmd.stdout.on('data', (data) => {
+                script.stdout.on('data', (data) => {
                     output += data.toString();
                 });
-                multiCmd.on('close', () => {
-                    const list = output.trim().split(', ');
-                    console.log('Alternative device detection:', list);
-                    resolve(list);
+                script.stderr.on('data', (data) => {
+                    console.error('AppleScript error:', data.toString());
+                });
+                script.on('close', (code) => {
+                    if (code === 0) {
+                        resolve(output);
+                    }
+                    else {
+                        reject(new Error(`AppleScript exited with code ${code}`));
+                    }
                 });
             });
-            deviceList.forEach((name) => {
-                if (name.includes('Multi-Output') || name.includes('Headphones') || name.includes('External')) {
-                    devices.push({ name, id: name, isDefault: false, isBlackHole: false });
+            // Parse the device names
+            const deviceNames = scriptResult.trim().split(', ');
+            console.log('Detected audio devices:', deviceNames);
+            for (const name of deviceNames) {
+                if (name && name !== '') {
+                    const isBlackHole = name.includes('BlackHole');
+                    const isMultiOutput = name.includes('Multi-Output');
+                    devices.push({
+                        name,
+                        id: name,
+                        isDefault: false, // Can't determine default device with this method
+                        isBlackHole,
+                        isMultiOutput
+                    });
+                    console.log(`Found device (alt method): ${name}`);
                 }
-            });
+            }
         }
-        catch (error) {
-            console.error('Error in alternative device detection:', error);
+        catch (err) {
+            console.error('Alternative device detection failed:', err);
         }
     }
-    console.log('Fallback parsed output devices:', devices);
+    // If still no devices, add fallback devices
+    if (devices.length === 0) {
+        console.log('No devices found, adding known devices');
+        devices.push({ name: 'MacBook Pro Speakers', id: 'MacBook Pro Speakers', isDefault: true, isBlackHole: false, isMultiOutput: false });
+        devices.push({ name: 'BlackHole 16ch', id: 'BlackHole 16ch', isDefault: false, isBlackHole: true, isMultiOutput: false });
+        devices.push({ name: 'Multi-Output Device', id: 'Multi-Output Device', isDefault: false, isBlackHole: false, isMultiOutput: true });
+    }
+    console.log('Detected output devices:', devices);
     return devices;
 }
 // Setup BlackHole as audio output with specified speaker
@@ -1003,93 +1117,150 @@ function setupBlackHoleRouting(outputDeviceName) {
             // Get available output devices
             const outputDevices = await getAudioOutputDevices();
             console.log('Available output devices:', outputDevices.map(d => d.name));
+            // Check if Multi-Output already exists and includes BlackHole
+            const existingMultiOutput = outputDevices.find(d => d.isMultiOutput);
+            if (existingMultiOutput) {
+                console.log('Using existing Multi-Output Device');
+                // Use existing multi-output device
+                const setDefaultCmd = (0, child_process_1.spawn)('osascript', [
+                    '-e', 'tell application "System Events" to set volume input volume 100',
+                    '-e', 'tell application "System Events" to set volume output volume 100',
+                    '-e', `tell application "System Events" to set properties of audio device "${existingMultiOutput.name}" to {output volume:100, input volume:100}`,
+                    '-e', `tell application "System Events" to set properties of (get audio output device) to {output muted:false}`,
+                    '-e', `tell application "System Events" to set default audio device to audio device "${existingMultiOutput.name}"`
+                ]);
+                setDefaultCmd.on('close', (code) => {
+                    if (code === 0) {
+                        console.log(`Successfully set existing multi-output device as default`);
+                        resolve(true);
+                        return;
+                    }
+                    else {
+                        console.log('Failed to set existing multi-output, creating new one...');
+                    }
+                });
+            }
+            // If we get here, we need to create a new multi-output device
             // If no specific device is specified, use the default
             let targetOutputName = outputDeviceName;
             if (!targetOutputName) {
-                const defaultDevice = outputDevices.find(d => d.isDefault);
+                const defaultDevice = outputDevices.find(d => d.isDefault && !d.isBlackHole && !d.isMultiOutput);
                 targetOutputName = defaultDevice ? defaultDevice.name : 'Built-in Output';
             }
             console.log(`Setting up multi-output with BlackHole and "${targetOutputName}"`);
-            // Use Audio MIDI Setup script more reliably
-            const createMultiOutputCmd = 'osascript';
-            const createMultiOutputArgs = [
-                '-e',
-                `tell application "Audio MIDI Setup"
-            try
-                -- First clean up any existing PAL device
-                set allDevices to get name of every aggregate device
-                repeat with deviceName in allDevices
-                    if deviceName contains "PAL-Recording" then
-                        set deviceToRemove to first aggregate device whose name contains "PAL-Recording"
-                        delete deviceToRemove
-                    end if
-                end repeat
-                
-                -- Create new aggregate device
-                set newDevice to make new aggregate device with properties {name:"PAL-Recording-Output"}
-                
-                -- Find specific devices
-                set allAudioDevices to get name of every audio device
-                
-                -- Try to find output device
-                set foundOutput to false
-                repeat with deviceName in allAudioDevices
-                    if deviceName contains "${targetOutputName}" then
-                        set outputDevice to first audio device whose name contains "${targetOutputName}"
-                        add audio device outputDevice to newDevice
-                        set foundOutput to true
-                    end if
-                end repeat
-                
-                -- Try to find BlackHole device
-                set foundBlackHole to false
-                repeat with deviceName in allAudioDevices
-                    if deviceName contains "BlackHole" then
-                        set blackholeDevice to first audio device whose name contains "BlackHole"
-                        add audio device blackholeDevice to newDevice
-                        set foundBlackHole to true
-                    end if
-                end repeat
-                
-                -- Set as default device if found both
-                if foundOutput and foundBlackHole then
-                    set default output device to newDevice
-                    return true
-                else
-                    return false
-                end if
-            on error errMsg
-                log "Error in AppleScript: " & errMsg
-                return false
-            end try
-        end tell`
-            ];
-            const createMultiOutput = (0, child_process_1.spawn)(createMultiOutputCmd, createMultiOutputArgs);
-            createMultiOutput.stdout.on('data', (data) => {
+            // Create AppleScript content in a more reliable way
+            const script = `
+      tell application "Audio MIDI Setup"
+        try
+          -- First clean up any existing PAL device
+          set allDevices to get every device
+          repeat with deviceItem in allDevices
+            set deviceName to (get name of deviceItem)
+            if deviceName contains "PAL-Recording" then
+              delete deviceItem
+            end if
+          end repeat
+          
+          -- Create new aggregate device
+          set newDevice to make new aggregate device
+          set name of newDevice to "PAL-Recording-Output"
+          
+          -- Find specific devices by name
+          set targetDevice to null
+          set blackholeDevice to null
+          
+          -- Loop through all devices
+          set allDevices to get every device
+          repeat with deviceItem in allDevices
+            set deviceName to (get name of deviceItem)
+            if deviceName contains "${targetOutputName}" then
+              set targetDevice to deviceItem
+            end if
+            if deviceName contains "BlackHole" then
+              set blackholeDevice to deviceItem
+            end if
+          end repeat
+          
+          -- Add devices to aggregate if found
+          if targetDevice is not null then
+            add device targetDevice to newDevice
+            log "Added output device to multi-output"
+          end if
+          
+          if blackholeDevice is not null then
+            add device blackholeDevice to newDevice
+            log "Added BlackHole to multi-output"
+          end if
+          
+          -- Set default output device
+          set default output device to newDevice
+          return "success"
+        on error errMsg
+          return "Error: " & errMsg
+        end try
+      end tell`;
+            const createMultiOutputCmd = (0, child_process_1.spawn)('osascript', ['-e', script]);
+            let stdout = '';
+            let stderr = '';
+            createMultiOutputCmd.stdout.on('data', (data) => {
+                stdout += data.toString();
                 console.log(`AppleScript output: ${data}`);
             });
-            createMultiOutput.stderr.on('data', (data) => {
+            createMultiOutputCmd.stderr.on('data', (data) => {
+                stderr += data.toString();
                 console.error(`AppleScript error: ${data}`);
             });
-            createMultiOutput.on('close', (code) => {
-                if (code === 0) {
+            createMultiOutputCmd.on('close', (code) => {
+                if (code === 0 && stdout.includes('success')) {
                     console.log(`Successfully created multi-output device with BlackHole and ${targetOutputName}`);
                     resolve(true);
                 }
                 else {
                     // Fallback: If AppleScript approach fails, try the command line tool
                     console.log('AppleScript method failed, trying fallback method');
-                    const command = 'SwitchAudioSource';
-                    const args = ['-s', 'BlackHole 16ch'];
-                    const process = (0, child_process_1.spawn)(command, args);
-                    process.on('close', (code) => {
+                    // Try using Audio MIDI Setup application directly
+                    const script2 = `
+          do shell script "open -a 'Audio MIDI Setup'"
+          delay 1
+          tell application "System Events"
+            tell process "Audio MIDI Setup"
+              -- Click the + button to create a new aggregate device
+              click button 1 of group 1 of window 1
+              delay 0.5
+              click menu item "Create Multi-Output Device" of menu 1 of menu bar item "Audio" of menu bar 1
+              delay 0.5
+              
+              -- Attempt to select both target and BlackHole devices
+              tell window 1
+                repeat with uiRow in (get rows of table 1 of scroll area 1)
+                  if name of static text 1 of uiRow contains "BlackHole" or name of static text 1 of uiRow contains "${targetOutputName}" then
+                    set selected of uiRow to true
+                  end if
+                end repeat
+              end tell
+            end tell
+          end tell`;
+                    const openMidiSetup = (0, child_process_1.spawn)('osascript', ['-e', script2]);
+                    openMidiSetup.on('close', (code) => {
                         if (code === 0) {
-                            console.log('Successfully switched to BlackHole audio device (fallback method)');
+                            console.log('Opened Audio MIDI Setup for manual device configuration');
                             resolve(true);
                         }
                         else {
-                            console.error(`Failed to switch audio device, exit code: ${code}`);
-                            reject(new Error(`Failed to switch audio device, exit code: ${code}`));
+                            // Last resort fallback - just switch to BlackHole
+                            const command = 'SwitchAudioSource';
+                            const args = ['-s', 'BlackHole 16ch'];
+                            const process = (0, child_process_1.spawn)(command, args);
+                            process.on('close', (code) => {
+                                if (code === 0) {
+                                    console.log('Successfully switched to BlackHole audio device (fallback method)');
+                                    resolve(true);
+                                }
+                                else {
+                                    console.error(`Failed to switch audio device, exit code: ${code}`);
+                                    reject(new Error(`Failed to switch audio device, exit code: ${code}`));
+                                }
+                            });
                         }
                     });
                 }
