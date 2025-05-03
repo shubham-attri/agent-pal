@@ -84,7 +84,7 @@ function createWindow(): void {
     }
   }
 
-  mainWindow.loadFile(path.join(__dirname, '../src/ui/index.html'));
+  mainWindow.loadFile(path.join(__dirname, 'ui/index.html'));
 
   mainWindow.on('blur', () => {
     // Optional: Hide the small window when it loses focus?
@@ -213,7 +213,8 @@ function createMainChatWindow(): void {
   // Set window title without the "Agent Pal is ready" message
   mainChatWindow.setTitle('Agent Pal');
 
-  mainChatWindow.loadFile(path.join(__dirname, '../src/ui/main-chat.html'));
+  // Load the file from the dist directory where webpack output is stored
+  mainChatWindow.loadFile(path.join(__dirname, 'ui/main-chat.html'));
 
   mainChatWindow.on('close', (event) => {
     if (!isQuitting) {
