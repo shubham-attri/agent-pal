@@ -1,337 +1,107 @@
-"use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-Object.defineProperty(exports, "__esModule", { value: true });
-const electron_1 = require("electron");
-const path = __importStar(require("path"));
-const fs = __importStar(require("fs"));
-const isDev = process.env.NODE_ENV === 'development';
-let mainWindow = null;
-let tray = null;
-let isQuitting = false;
-const windowConfig = {
-    small: {
-        width: 600,
-        height: 53,
-        resizable: false
-    },
-    full: {
-        width: 600,
-        height: 500,
-        resizable: true
-    }
-};
-function createWindow() {
-    if (mainWindow) {
-        return;
-    }
-    mainWindow = new electron_1.BrowserWindow({
-        width: windowConfig.small.width,
-        height: windowConfig.small.height,
-        resizable: windowConfig.small.resizable,
-        frame: false,
-        transparent: true,
-        alwaysOnTop: true,
-        show: false,
-        icon: path.join(__dirname, '../assets', 'PAL Logo.png'),
-        webPreferences: {
-            preload: path.join(__dirname, 'preload.js'),
-            contextIsolation: true,
-            nodeIntegration: false
-        }
-    });
-    if (process.platform === 'darwin') {
-        const iconPath = path.join(__dirname, '../assets', 'PAL Logo.png');
-        if (fs.existsSync(iconPath)) {
-            electron_1.app.dock.setIcon(electron_1.nativeImage.createFromPath(iconPath));
-        }
-        else {
-            console.warn('Dock icon file not found:', iconPath);
-        }
-    }
-    mainWindow.loadFile(path.join(__dirname, '../src/ui/index.html'));
-    mainWindow.on('blur', () => {
-        // Optional: Hide the small window when it loses focus?
-    });
-    mainWindow.on('close', (event) => {
-        if (!isQuitting && mainWindow) {
-            event.preventDefault();
-            mainWindow.hide();
-        }
-    });
-    mainWindow.on('closed', () => {
-        mainWindow = null;
-    });
-}
-function positionChatBarOnCurrentScreen(window) {
-    try {
-        const point = electron_1.screen.getCursorScreenPoint();
-        const display = electron_1.screen.getDisplayNearestPoint(point);
-        const { workArea } = display;
-        const { width: windowWidth, height: windowHeight } = windowConfig.small;
-        const x = Math.floor(workArea.x + (workArea.width / 2) - (windowWidth / 2));
-        // Position slightly above the bottom edge
-        const y = Math.floor(workArea.y + workArea.height - windowHeight - 50); // 50px margin from bottom
-        window.setPosition(x, y);
-    }
-    catch (error) {
-        console.error("Error positioning window:", error);
-        // Fallback positioning if screen API fails
-        window.center();
-    }
-}
-function showChatBarWindow() {
-    if (!mainWindow) {
-        createWindow();
-    }
-    if (!mainWindow) {
-        console.error("Failed to create mainWindow for showChatBarWindow");
-        return; // Guard if creation failed
-    }
-    mainWindow.setAlwaysOnTop(true); // Make sure it's on top when shown
-    // mainWindow.setSkipTaskbar(false); // Keep in taskbar
-    mainWindow.resizable = windowConfig.small.resizable;
-    // Ensure the size is set correctly before positioning
-    mainWindow.setSize(windowConfig.small.width, windowConfig.small.height, false); // Set size without animation
-    positionChatBarOnCurrentScreen(mainWindow); // *** Use new positioning logic ***
-    mainWindow.show();
-    mainWindow.focus();
-}
-function hideChatBarWindow() {
-    if (mainWindow) {
-        mainWindow.hide();
-    }
-}
-function toggleChatBarVisibility() {
-    if (!mainWindow) {
-        console.log("Toggle: MainWindow doesn't exist, creating and showing Chat Bar.");
-        showChatBarWindow(); // Create and show if it doesn't exist
-        return;
-    }
-    // If it's visible AND it's the small chat bar (not resizable)
-    if (mainWindow.isVisible() && !mainWindow.isResizable()) {
-        console.log("Toggle: Chat Bar is visible, hiding.");
-        hideChatBarWindow();
-    }
-    else { // If it's hidden, or it's the full window (resizable)
-        console.log("Toggle: Window hidden or full size, showing Chat Bar.");
-        showChatBarWindow(); // Show (or bring to front) the chat bar configuration
-    }
-}
-function showFullChatWindow() {
-    if (!mainWindow) {
-        createWindow(); // Create if it doesn't exist
-    }
-    if (!mainWindow) {
-        console.error("Failed to create mainWindow for showFullChatWindow");
-        return; // Guard
-    }
-    mainWindow.setAlwaysOnTop(false); // *** Full window shouldn't be always on top ***
-    mainWindow.setSkipTaskbar(false); // *** Ensure it's in taskbar ***
-    mainWindow.resizable = windowConfig.full.resizable;
-    mainWindow.setSize(windowConfig.full.width, windowConfig.full.height, true); // Animate?
-    mainWindow.center();
-    mainWindow.show();
-    mainWindow.focus();
-}
-function createTray() {
-    let trayIcon;
-    // Use specific template naming for macOS for auto dark/light mode handling
-    const iconFileName = process.platform === 'darwin' ? 'PAL Logo_Template.png' : 'PAL Logo.png';
-    // Construct path relative to the build output directory
-    const iconPath = path.join(__dirname, '../assets', iconFileName);
-    console.log(`Attempting to load tray icon from: ${iconPath}`);
-    try {
-        if (fs.existsSync(iconPath)) {
-            trayIcon = electron_1.nativeImage.createFromPath(iconPath);
-            if (process.platform === 'darwin') {
-                // Template image naming convention handles automatic inversion
-                // Resize if the source icon isn't the desired tray size (e.g., 22px height on macOS)
-                trayIcon = trayIcon.resize({ height: 22 });
-            }
-            else {
-                trayIcon = trayIcon.resize({ width: 16, height: 16 });
-            }
-        }
-        else {
-            console.warn(`Tray icon file not found at ${iconPath}. Using fallback.`);
-            // Attempt to load non-template version as fallback on Mac
-            const fallbackPath = path.join(__dirname, '../assets', 'PAL Logo.png');
-            if (process.platform === 'darwin' && fs.existsSync(fallbackPath)) {
-                console.log(`Using fallback non-template icon: ${fallbackPath}`);
-                trayIcon = electron_1.nativeImage.createFromPath(fallbackPath).resize({ height: 22 });
-            }
-            else {
-                console.log('Using empty fallback icon.');
-                trayIcon = electron_1.nativeImage.createEmpty().resize({ width: 16, height: 16 }); // Absolute fallback
-            }
-        }
-    }
-    catch (error) {
-        console.error('Error loading tray icon:', error);
-        trayIcon = electron_1.nativeImage.createEmpty().resize({ width: 16, height: 16 });
-    }
-    tray = new electron_1.Tray(trayIcon);
-    updateTrayMenu(); // Initial menu setup
-    // Left click toggles chat bar visibility
-    tray.on('click', toggleChatBarVisibility);
-    // No need to explicitly subscribe for theme changes on macOS if using Template image naming
-}
-function updateTrayMenu() {
-    if (!tray)
-        return;
-    const contextMenu = electron_1.Menu.buildFromTemplate([
-        {
-            label: 'Show ChatBar (Alt+Space)', // Updated Label
-            click: () => {
-                toggleChatBarVisibility(); // *** Use toggle function ***
-            }
-        },
-        // { // *** NEW: Show MiniWindow (Commented out - Requires IPC and renderer changes) ***
-        //   label: 'Show MiniWindow',
-        //   click: () => {
-        //     if (mainWindow && mainWindow.webContents) {
-        //       mainWindow.webContents.send('show-mini-window');
-        //     } else {
-        //        console.log("Cannot send show-mini-window IPC: mainWindow not available.");
-        //     }
-        //   }
-        // },
-        {
-            label: 'New Chat',
-            click: () => {
-                console.log('Tray Menu: New Chat clicked');
-                showFullChatWindow(); // Show the full window directly
-                // Send IPC after a short delay to ensure window is ready
-                setTimeout(() => {
-                    if (mainWindow && mainWindow.webContents) {
-                        console.log('Tray Menu: Sending new-chat IPC');
-                        mainWindow.webContents.send('new-chat');
-                    }
-                    else {
-                        console.log('Tray Menu: Cannot send new-chat IPC, mainWindow not ready?');
-                    }
-                }, 150); // Increased delay slightly
-            }
-        },
-        { type: 'separator' },
-        {
-            label: 'Quit Agent Pal',
-            click: () => {
-                isQuitting = true;
-                electron_1.app.quit();
-            }
-        }
-    ]);
-    tray.setToolTip('Agent Pal');
-    tray.setContextMenu(contextMenu);
-}
-function registerShortcuts() {
-    // Unregister existing shortcut if necessary before registering
-    electron_1.globalShortcut.unregister('Alt+Space');
-    const ret = electron_1.globalShortcut.register('Alt+Space', () => {
-        console.log('Alt+Space pressed - Toggling Chat Bar');
-        toggleChatBarVisibility(); // *** Use toggle function ***
-    });
-    if (!ret) {
-        console.error('Failed to register global shortcut Alt+Space');
-    }
-    console.log(`Alt+Space registered: ${electron_1.globalShortcut.isRegistered('Alt+Space')}`);
-}
-function setupIpcHandlers() {
-    electron_1.ipcMain.on('hide-window', () => {
-        console.log('IPC: hide-window received');
-        hideChatBarWindow();
-    });
-    electron_1.ipcMain.on('toggle-window-size', () => {
-        console.log('IPC received: toggle-window-size - showing full window');
-        showFullChatWindow(); // *** Use updated show function ***
-    });
-    // Handler for renderer asking for new chat (often triggered by MiniWindow expand or tray)
-    electron_1.ipcMain.on('create-new-chat', () => {
-        console.log('IPC received: create-new-chat - Forwarding to renderer');
-        if (mainWindow && mainWindow.webContents) {
-            mainWindow.webContents.send('new-chat'); // Forward to renderer
-        }
-    });
-    // *** Placeholder for MiniWindow IPC ***
-    // ipcMain.on('show-mini-window', () => { ... });
-    // --- Existing Handlers ---
-    electron_1.ipcMain.handle('request-microphone-permission', async () => {
-    });
-    electron_1.ipcMain.handle('get-audio-devices', async () => {
-    });
-    electron_1.ipcMain.handle('start-audio-recording', async (event, deviceId) => {
-    });
-    electron_1.ipcMain.handle('stop-audio-recording', async () => {
-    });
-    electron_1.ipcMain.handle('ask-question', async (event, question) => {
-    });
-    electron_1.ipcMain.handle('toggle-recording-from-external', async () => {
-    });
-    electron_1.ipcMain.handle('get-recording-status', async () => {
-    });
-}
-electron_1.app.on('before-quit', () => {
-    console.log('App before-quit');
-    isQuitting = true;
-    electron_1.globalShortcut.unregisterAll();
-});
-electron_1.app.on('will-quit', () => {
-    electron_1.globalShortcut.unregisterAll();
-});
-electron_1.app.on('activate', () => {
-    console.log('App activate');
-    if (electron_1.BrowserWindow.getAllWindows().length === 0) {
-        createWindow();
-    }
-    // If window exists, toggle chat bar visibility (show if hidden/full, hide if chat bar)
-    console.log("App activated (Dock click)");
-    toggleChatBarVisibility(); // *** Use toggle function ***
-});
-electron_1.app.on('window-all-closed', () => {
-    console.log('App window-all-closed');
-});
-electron_1.app.whenReady().then(async () => {
-    console.log('App ready');
-    electron_1.app.name = 'Agent Pal';
-    createWindow();
-    createTray();
-    registerShortcuts();
-    setupIpcHandlers();
-    console.log('Agent Pal initialization complete.');
-    if (process.platform === 'darwin') {
-        electron_1.app.dock?.hide();
-    }
-});
+/*
+ * ATTENTION: The "eval" devtool has been used (maybe by default in mode: "development").
+ * This devtool is neither made for production nor for readable output files.
+ * It uses "eval()" calls to create a separate source file in the browser devtools.
+ * If you are trying to read the output file, select a different devtool (https://webpack.js.org/configuration/devtool/)
+ * or disable the default devtool with "devtool: false".
+ * If you are looking for production-ready output files, see mode: "production" (https://webpack.js.org/configuration/mode/).
+ */
+/******/ (() => { // webpackBootstrap
+/******/ 	"use strict";
+/******/ 	var __webpack_modules__ = ({
+
+/***/ "./src/config.ts":
+/*!***********************!*\
+  !*** ./src/config.ts ***!
+  \***********************/
+/***/ ((__unused_webpack_module, exports) => {
+
+eval("\n/**\n * Application Configuration\n *\n * Central configuration settings for the application.\n * Edit this file to change AI endpoint, model, and other settings.\n */\nObject.defineProperty(exports, \"__esModule\", ({ value: true }));\nexports.config = void 0;\nexports.config = {\n    // AI Service Configuration\n    ai: {\n        // API endpoint for LM Studio\n        apiUrl: 'http://127.0.0.1:1234',\n        // Model to use (Qwen 3 4B in this case)\n        model: 'qwen3-4b',\n        // System prompt for the AI\n        systemPrompt: 'You are a helpful AI assistant called Agent Pal. You are concise, friendly, and knowledgeable.'\n    },\n    // Application UI Configuration\n    ui: {\n        // Welcome message shown when starting new chat\n        welcomeMessage: 'Agent Pal is ready. How can I help you today?',\n        // Error message for AI service connection issues\n        connectionErrorMessage: 'Failed to communicate with AI backend. Please check that LM Studio is running at the configured endpoint.'\n    }\n};\n\n\n//# sourceURL=webpack://agent-pal/./src/config.ts?");
+
+/***/ }),
+
+/***/ "./src/main.ts":
+/*!*********************!*\
+  !*** ./src/main.ts ***!
+  \*********************/
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+eval("\nvar __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {\n    if (k2 === undefined) k2 = k;\n    var desc = Object.getOwnPropertyDescriptor(m, k);\n    if (!desc || (\"get\" in desc ? !m.__esModule : desc.writable || desc.configurable)) {\n      desc = { enumerable: true, get: function() { return m[k]; } };\n    }\n    Object.defineProperty(o, k2, desc);\n}) : (function(o, m, k, k2) {\n    if (k2 === undefined) k2 = k;\n    o[k2] = m[k];\n}));\nvar __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {\n    Object.defineProperty(o, \"default\", { enumerable: true, value: v });\n}) : function(o, v) {\n    o[\"default\"] = v;\n});\nvar __importStar = (this && this.__importStar) || (function () {\n    var ownKeys = function(o) {\n        ownKeys = Object.getOwnPropertyNames || function (o) {\n            var ar = [];\n            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;\n            return ar;\n        };\n        return ownKeys(o);\n    };\n    return function (mod) {\n        if (mod && mod.__esModule) return mod;\n        var result = {};\n        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== \"default\") __createBinding(result, mod, k[i]);\n        __setModuleDefault(result, mod);\n        return result;\n    };\n})();\nObject.defineProperty(exports, \"__esModule\", ({ value: true }));\nconst electron_1 = __webpack_require__(/*! electron */ \"electron\");\nconst path = __importStar(__webpack_require__(/*! path */ \"path\"));\nconst fs = __importStar(__webpack_require__(/*! fs */ \"fs\"));\nconst ai_service_1 = __webpack_require__(/*! ./services/ai-service */ \"./src/services/ai-service.ts\");\nconst config_1 = __webpack_require__(/*! ./config */ \"./src/config.ts\");\nconst isDev = \"development\" === 'development';\nlet mainWindow = null;\nlet mainChatWindow = null; // New window for the full-screen chat\nlet tray = null;\nlet isQuitting = false;\n// Initialize AI service\nconst aiService = new ai_service_1.AIService(config_1.config.ai.apiUrl, config_1.config.ai.model, config_1.config.ai.systemPrompt);\n// Store conversation history\nconst conversations = new Map();\nlet currentConversationId = 'default';\nconst windowConfig = {\n    small: {\n        width: 600,\n        height: 53,\n        resizable: false\n    },\n    full: {\n        width: 600,\n        height: 500,\n        resizable: true\n    }\n};\n// Add new window config for the main chat window\nconst mainChatConfig = {\n    width: 1200,\n    height: 800,\n    minWidth: 800,\n    minHeight: 600\n};\nfunction createWindow() {\n    if (mainWindow) {\n        return;\n    }\n    mainWindow = new electron_1.BrowserWindow({\n        width: windowConfig.small.width,\n        height: windowConfig.small.height,\n        resizable: windowConfig.small.resizable,\n        frame: false,\n        transparent: true,\n        alwaysOnTop: true,\n        show: false,\n        icon: path.join(__dirname, '../assets', 'PAL Logo.png'),\n        webPreferences: {\n            preload: path.join(__dirname, 'preload.js'),\n            contextIsolation: true,\n            nodeIntegration: false\n        }\n    });\n    if (process.platform === 'darwin') {\n        const iconPath = path.join(__dirname, '../assets', 'PAL Logo.png');\n        if (fs.existsSync(iconPath)) {\n            electron_1.app.dock.setIcon(electron_1.nativeImage.createFromPath(iconPath));\n        }\n        else {\n            console.warn('Dock icon file not found:', iconPath);\n        }\n    }\n    mainWindow.loadFile(path.join(__dirname, '../src/ui/index.html'));\n    mainWindow.on('blur', () => {\n        // Optional: Hide the small window when it loses focus?\n    });\n    mainWindow.on('close', (event) => {\n        if (!isQuitting && mainWindow) {\n            event.preventDefault();\n            mainWindow.hide();\n        }\n    });\n    mainWindow.on('closed', () => {\n        mainWindow = null;\n    });\n}\nfunction positionChatBarOnCurrentScreen(window) {\n    try {\n        const point = electron_1.screen.getCursorScreenPoint();\n        const display = electron_1.screen.getDisplayNearestPoint(point);\n        const { workArea } = display;\n        const { width: windowWidth, height: windowHeight } = windowConfig.small;\n        const x = Math.floor(workArea.x + (workArea.width / 2) - (windowWidth / 2));\n        // Position slightly above the bottom edge\n        const y = Math.floor(workArea.y + workArea.height - windowHeight - 50); // 50px margin from bottom\n        window.setPosition(x, y);\n    }\n    catch (error) {\n        console.error(\"Error positioning window:\", error);\n        // Fallback positioning if screen API fails\n        window.center();\n    }\n}\nfunction showChatBarWindow() {\n    if (!mainWindow) {\n        createWindow();\n    }\n    if (!mainWindow) {\n        console.error(\"Failed to create mainWindow for showChatBarWindow\");\n        return; // Guard if creation failed\n    }\n    mainWindow.setAlwaysOnTop(true); // Make sure it's on top when shown\n    // mainWindow.setSkipTaskbar(false); // Keep in taskbar\n    mainWindow.resizable = windowConfig.small.resizable;\n    // Ensure the size is set correctly before positioning\n    mainWindow.setSize(windowConfig.small.width, windowConfig.small.height, false); // Set size without animation\n    positionChatBarOnCurrentScreen(mainWindow); // *** Use new positioning logic ***\n    mainWindow.show();\n    mainWindow.focus();\n}\nfunction hideChatBarWindow() {\n    if (mainWindow) {\n        mainWindow.hide();\n    }\n}\nfunction toggleChatBarVisibility() {\n    if (!mainWindow) {\n        console.log(\"Toggle: MainWindow doesn't exist, creating and showing Chat Bar.\");\n        showChatBarWindow(); // Create and show if it doesn't exist\n        return;\n    }\n    // If it's visible AND it's the small chat bar (not resizable)\n    if (mainWindow.isVisible() && !mainWindow.isResizable()) {\n        console.log(\"Toggle: Chat Bar is visible, hiding.\");\n        hideChatBarWindow();\n    }\n    else { // If it's hidden, or it's the full window (resizable)\n        console.log(\"Toggle: Window hidden or full size, showing Chat Bar.\");\n        showChatBarWindow(); // Show (or bring to front) the chat bar configuration\n    }\n}\nfunction showFullChatWindow() {\n    if (!mainWindow) {\n        createWindow(); // Create if it doesn't exist\n    }\n    if (!mainWindow) {\n        console.error(\"Failed to create mainWindow for showFullChatWindow\");\n        return; // Guard\n    }\n    mainWindow.setAlwaysOnTop(false); // *** Full window shouldn't be always on top ***\n    mainWindow.setSkipTaskbar(false); // *** Ensure it's in taskbar ***\n    mainWindow.resizable = windowConfig.full.resizable;\n    mainWindow.setSize(windowConfig.full.width, windowConfig.full.height, true); // Animate?\n    mainWindow.center();\n    mainWindow.show();\n    mainWindow.focus();\n}\n/**\n * Creates the main chat window that resembles ChatGPT\n */\nfunction createMainChatWindow() {\n    if (mainChatWindow) {\n        mainChatWindow.show();\n        mainChatWindow.focus();\n        return;\n    }\n    mainChatWindow = new electron_1.BrowserWindow({\n        width: mainChatConfig.width,\n        height: mainChatConfig.height,\n        minWidth: mainChatConfig.minWidth,\n        minHeight: mainChatConfig.minHeight,\n        backgroundColor: '#000000',\n        frame: true,\n        transparent: false,\n        icon: path.join(__dirname, '../assets', 'PAL Logo.png'),\n        webPreferences: {\n            preload: path.join(__dirname, 'preload.js'),\n            contextIsolation: true,\n            nodeIntegration: false\n        }\n    });\n    // Set window title without the \"Agent Pal is ready\" message\n    mainChatWindow.setTitle('Agent Pal');\n    mainChatWindow.loadFile(path.join(__dirname, '../src/ui/main-chat.html'));\n    mainChatWindow.on('close', (event) => {\n        if (!isQuitting) {\n            event.preventDefault();\n            mainChatWindow?.hide();\n        }\n    });\n    mainChatWindow.on('closed', () => {\n        mainChatWindow = null;\n    });\n}\n/**\n * Show the main ChatGPT-like window\n */\nfunction showMainChatWindow() {\n    // Create the window if it doesn't exist\n    if (!mainChatWindow) {\n        createMainChatWindow();\n    }\n    else {\n        mainChatWindow.show();\n        mainChatWindow.focus();\n    }\n}\nfunction createTray() {\n    let trayIcon;\n    // Use specific template naming for macOS for auto dark/light mode handling\n    const iconFileName = process.platform === 'darwin' ? 'PAL Logo_Template.png' : 'PAL Logo.png';\n    // Construct path relative to the build output directory\n    const iconPath = path.join(__dirname, '../assets', iconFileName);\n    console.log(`Attempting to load tray icon from: ${iconPath}`);\n    try {\n        if (fs.existsSync(iconPath)) {\n            trayIcon = electron_1.nativeImage.createFromPath(iconPath);\n            if (process.platform === 'darwin') {\n                // Template image naming convention handles automatic inversion\n                // Resize if the source icon isn't the desired tray size (e.g., 22px height on macOS)\n                trayIcon = trayIcon.resize({ height: 22 });\n            }\n            else {\n                trayIcon = trayIcon.resize({ width: 16, height: 16 });\n            }\n        }\n        else {\n            console.warn(`Tray icon file not found at ${iconPath}. Using fallback.`);\n            // Attempt to load non-template version as fallback on Mac\n            const fallbackPath = path.join(__dirname, '../assets', 'PAL Logo.png');\n            if (process.platform === 'darwin' && fs.existsSync(fallbackPath)) {\n                console.log(`Using fallback non-template icon: ${fallbackPath}`);\n                trayIcon = electron_1.nativeImage.createFromPath(fallbackPath).resize({ height: 22 });\n            }\n            else {\n                console.log('Using empty fallback icon.');\n                trayIcon = electron_1.nativeImage.createEmpty().resize({ width: 16, height: 16 }); // Absolute fallback\n            }\n        }\n    }\n    catch (error) {\n        console.error('Error loading tray icon:', error);\n        trayIcon = electron_1.nativeImage.createEmpty().resize({ width: 16, height: 16 });\n    }\n    tray = new electron_1.Tray(trayIcon);\n    updateTrayMenu(); // Initial menu setup\n    // Left click toggles chat bar visibility\n    tray.on('click', toggleChatBarVisibility);\n    // No need to explicitly subscribe for theme changes on macOS if using Template image naming\n}\nfunction updateTrayMenu() {\n    if (!tray)\n        return;\n    const contextMenu = electron_1.Menu.buildFromTemplate([\n        {\n            label: 'Show ChatBar (Alt+Space)', // Updated Label\n            click: () => {\n                toggleChatBarVisibility(); // *** Use toggle function ***\n            }\n        },\n        {\n            label: 'Open Chat Window',\n            click: () => {\n                showMainChatWindow();\n            }\n        },\n        {\n            label: 'New Chat',\n            click: () => {\n                console.log('Tray Menu: New Chat clicked');\n                showFullChatWindow(); // Show the full window directly\n                // Send IPC after a short delay to ensure window is ready\n                setTimeout(() => {\n                    if (mainWindow && mainWindow.webContents) {\n                        console.log('Tray Menu: Sending new-chat IPC');\n                        mainWindow.webContents.send('new-chat');\n                    }\n                    else {\n                        console.log('Tray Menu: Cannot send new-chat IPC, mainWindow not ready?');\n                    }\n                }, 150); // Increased delay slightly\n            }\n        },\n        { type: 'separator' },\n        {\n            label: 'Quit Agent Pal',\n            click: () => {\n                isQuitting = true;\n                electron_1.app.quit();\n            }\n        }\n    ]);\n    tray.setToolTip('Agent Pal');\n    tray.setContextMenu(contextMenu);\n}\nfunction registerShortcuts() {\n    // Unregister existing shortcut if necessary before registering\n    electron_1.globalShortcut.unregister('Alt+Space');\n    const ret = electron_1.globalShortcut.register('Alt+Space', () => {\n        console.log('Alt+Space pressed - Toggling Chat Bar');\n        toggleChatBarVisibility(); // *** Use toggle function ***\n    });\n    if (!ret) {\n        console.error('Failed to register global shortcut Alt+Space');\n    }\n    console.log(`Alt+Space registered: ${electron_1.globalShortcut.isRegistered('Alt+Space')}`);\n}\nfunction setupIpcHandlers() {\n    electron_1.ipcMain.on('hide-window', () => {\n        console.log('IPC: hide-window received');\n        hideChatBarWindow();\n    });\n    electron_1.ipcMain.on('toggle-window-size', () => {\n        console.log('IPC received: toggle-window-size - showing full window');\n        showFullChatWindow(); // *** Use updated show function ***\n    });\n    // Handler for renderer asking for new chat (often triggered by MiniWindow expand or tray)\n    electron_1.ipcMain.on('create-new-chat', () => {\n        console.log('IPC received: create-new-chat - Forwarding to renderer');\n        if (mainWindow && mainWindow.webContents) {\n            mainWindow.webContents.send('new-chat'); // Forward to renderer\n        }\n        // Clear conversation history for new chat\n        currentConversationId = `chat-${Date.now()}`;\n        conversations.set(currentConversationId, []);\n    });\n    // *** Placeholder for MiniWindow IPC ***\n    // ipcMain.on('show-mini-window', () => { ... });\n    // --- Existing Handlers ---\n    electron_1.ipcMain.handle('request-microphone-permission', async () => {\n    });\n    electron_1.ipcMain.handle('get-audio-devices', async () => {\n    });\n    electron_1.ipcMain.handle('start-audio-recording', async (event, deviceId) => {\n    });\n    electron_1.ipcMain.handle('stop-audio-recording', async () => {\n    });\n    // Update the ask-question handler to use AI service\n    electron_1.ipcMain.handle('ask-question', async (event, question) => {\n        try {\n            const conversationHistory = conversations.get(currentConversationId) || [];\n            // Add user message to history\n            conversationHistory.push({ role: 'user', content: question });\n            // Send message to AI service\n            const response = await aiService.sendMessage(question, conversationHistory);\n            // Add assistant response to history\n            conversationHistory.push({ role: 'assistant', content: response.content });\n            // Update conversation history\n            conversations.set(currentConversationId, conversationHistory);\n            return response.content;\n        }\n        catch (error) {\n            console.error('Error in ask-question handler:', error);\n            return `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;\n        }\n    });\n    electron_1.ipcMain.handle('toggle-recording-from-external', async () => {\n    });\n    electron_1.ipcMain.handle('get-recording-status', async () => {\n    });\n    // New handler for opening the main chat window\n    electron_1.ipcMain.on('open-main-chat', () => {\n        console.log('IPC: open-main-chat received');\n        showMainChatWindow();\n    });\n    // Update handler for the main chat window to use AI service\n    electron_1.ipcMain.handle('send-chat-message', async (event, message) => {\n        console.log('IPC: send-chat-message received', message);\n        try {\n            const conversationHistory = conversations.get(currentConversationId) || [];\n            // Add user message to history\n            conversationHistory.push({ role: 'user', content: message });\n            // Send message to AI service\n            const response = await aiService.sendMessage(message, conversationHistory);\n            // Add assistant response to history\n            conversationHistory.push({ role: 'assistant', content: response.content });\n            // Update conversation history\n            conversations.set(currentConversationId, conversationHistory);\n            return response;\n        }\n        catch (error) {\n            console.error('Error in send-chat-message handler:', error);\n            return {\n                content: `Error: ${error instanceof Error ? error.message : 'Failed to communicate with AI backend'}`,\n                toolCalls: []\n            };\n        }\n    });\n    // Handler for tool call responses (approve/reject)\n    electron_1.ipcMain.handle('send-tool-call-response', async (event, response) => {\n        console.log('IPC: send-tool-call-response received', response);\n        // Here you would process the tool call approval/rejection\n        // For now, we'll just return a mock result\n        if (response.action === 'approve') {\n            // Simulate a successful tool execution\n            return {\n                success: true,\n                data: \"Tool executed successfully\",\n                details: `Executed with parameters: ${JSON.stringify(response.parameters)}`\n            };\n        }\n        else {\n            return { success: false, reason: \"Tool execution rejected by user\" };\n        }\n    });\n}\nelectron_1.app.on('before-quit', () => {\n    console.log('App before-quit');\n    isQuitting = true;\n    electron_1.globalShortcut.unregisterAll();\n});\nelectron_1.app.on('will-quit', () => {\n    electron_1.globalShortcut.unregisterAll();\n});\nelectron_1.app.on('activate', () => {\n    console.log('App activate');\n    if (electron_1.BrowserWindow.getAllWindows().length === 0) {\n        createWindow();\n    }\n    // Show main chat window on dock click instead of toggling chat bar\n    console.log(\"App activated (Dock click)\");\n    showMainChatWindow(); // Open main chat window instead of toggling chat bar\n});\nelectron_1.app.on('window-all-closed', () => {\n    console.log('App window-all-closed');\n});\nelectron_1.app.whenReady().then(async () => {\n    console.log('App ready');\n    electron_1.app.name = 'Agent Pal';\n    createWindow();\n    // Automatically open main chat window on startup\n    createMainChatWindow();\n    createTray();\n    registerShortcuts();\n    setupIpcHandlers();\n    console.log('Agent Pal initialization complete.');\n    // Don't hide the dock when main chat window is opened at startup\n    // if (process.platform === 'darwin') {\n    //   app.dock?.hide();\n    // }\n});\n\n\n//# sourceURL=webpack://agent-pal/./src/main.ts?");
+
+/***/ }),
+
+/***/ "./src/services/ai-service.ts":
+/*!************************************!*\
+  !*** ./src/services/ai-service.ts ***!
+  \************************************/
+/***/ ((__unused_webpack_module, exports) => {
+
+eval("\n/**\n * AI Service\n * Handles communication with the LM Studio API endpoint\n */\nObject.defineProperty(exports, \"__esModule\", ({ value: true }));\nexports.AIService = void 0;\nclass AIService {\n    constructor(apiUrl = 'http://127.0.0.1:1234', model = 'qwen3-4b', systemPrompt = 'You are a helpful assistant.') {\n        this.apiUrl = apiUrl;\n        this.model = model;\n        this.systemPrompt = systemPrompt;\n    }\n    /**\n     * Send a message to the AI service\n     */\n    async sendMessage(userMessage, conversationHistory = []) {\n        try {\n            // Prepare the messages array including system prompt and history\n            const messages = [\n                { role: 'system', content: this.systemPrompt },\n                ...conversationHistory,\n                { role: 'user', content: userMessage }\n            ];\n            // Build request payload\n            const requestPayload = {\n                model: this.model,\n                messages: messages,\n                temperature: 0.7,\n                max_tokens: 1000\n            };\n            // Make the API request\n            const response = await fetch(`${this.apiUrl}/v1/chat/completions`, {\n                method: 'POST',\n                headers: {\n                    'Content-Type': 'application/json'\n                },\n                body: JSON.stringify(requestPayload)\n            });\n            if (!response.ok) {\n                const errorText = await response.text();\n                throw new Error(`API request failed with status ${response.status}: ${errorText}`);\n            }\n            const data = await response.json();\n            // Extract the response content\n            const content = data.choices[0]?.message?.content || 'No response received';\n            // We're not implementing tool calls yet, so return empty array\n            return { content, toolCalls: [] };\n        }\n        catch (error) {\n            console.error('Error in AI service:', error);\n            throw error;\n        }\n    }\n    /**\n     * Set a new system prompt\n     */\n    setSystemPrompt(prompt) {\n        this.systemPrompt = prompt;\n    }\n    /**\n     * Change the API endpoint\n     */\n    setApiUrl(url) {\n        this.apiUrl = url;\n    }\n    /**\n     * Change the model\n     */\n    setModel(model) {\n        this.model = model;\n    }\n}\nexports.AIService = AIService;\n\n\n//# sourceURL=webpack://agent-pal/./src/services/ai-service.ts?");
+
+/***/ }),
+
+/***/ "electron":
+/*!***************************!*\
+  !*** external "electron" ***!
+  \***************************/
+/***/ ((module) => {
+
+module.exports = require("electron");
+
+/***/ }),
+
+/***/ "fs":
+/*!*********************!*\
+  !*** external "fs" ***!
+  \*********************/
+/***/ ((module) => {
+
+module.exports = require("fs");
+
+/***/ }),
+
+/***/ "path":
+/*!***********************!*\
+  !*** external "path" ***!
+  \***********************/
+/***/ ((module) => {
+
+module.exports = require("path");
+
+/***/ })
+
+/******/ 	});
+/************************************************************************/
+/******/ 	// The module cache
+/******/ 	var __webpack_module_cache__ = {};
+/******/ 	
+/******/ 	// The require function
+/******/ 	function __webpack_require__(moduleId) {
+/******/ 		// Check if module is in cache
+/******/ 		var cachedModule = __webpack_module_cache__[moduleId];
+/******/ 		if (cachedModule !== undefined) {
+/******/ 			return cachedModule.exports;
+/******/ 		}
+/******/ 		// Create a new module (and put it into the cache)
+/******/ 		var module = __webpack_module_cache__[moduleId] = {
+/******/ 			// no module.id needed
+/******/ 			// no module.loaded needed
+/******/ 			exports: {}
+/******/ 		};
+/******/ 	
+/******/ 		// Execute the module function
+/******/ 		__webpack_modules__[moduleId].call(module.exports, module, module.exports, __webpack_require__);
+/******/ 	
+/******/ 		// Return the exports of the module
+/******/ 		return module.exports;
+/******/ 	}
+/******/ 	
+/************************************************************************/
+/******/ 	
+/******/ 	// startup
+/******/ 	// Load entry module and return exports
+/******/ 	// This entry module is referenced by other modules so it can't be inlined
+/******/ 	var __webpack_exports__ = __webpack_require__("./src/main.ts");
+/******/ 	
+/******/ })()
+;

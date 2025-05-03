@@ -2,20 +2,22 @@
   "name": "agent-pal",
   "productName": "Agent Pal",
   "version": "1.0.0",
-  "description": "AI-powered knowledge graph and question answering system",
+  "description": "AI-powered desktop chat application with local LLM support",
   "main": "dist/main.js",
   "scripts": {
-    "start": "npm run build && electron .",
-    "build": "tsc",
-    "watch": "tsc -w",
-    "dev": "concurrently \"npm run watch\" \"electron --require electron-reload . --no-sandbox\"",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "webpack --config webpack.config.js",
+    "start": "electron .",
+    "watch": "webpack --watch",
+    "lint": "eslint -c .eslintrc --ext .ts ./src",
+    "package": "npm run build && electron-packager . 'Agent Pal' --platform=darwin --arch=x64 --out=release-builds",
+    "dev": "concurrently \"npm run watch\" \"electron --require electron-reload . --no-sandbox\""
   },
   "keywords": [
     "electron",
     "ai",
-    "knowledge-graph",
-    "question-answering"
+    "chat",
+    "llm",
+    "lm-studio"
   ],
   "author": "",
   "license": "MIT",
@@ -23,9 +25,16 @@
     "@types/electron": "^1.6.10",
     "@types/node": "^20.10.6",
     "concurrently": "^8.2.2",
+    "copy-webpack-plugin": "^11.0.0",
+    "css-loader": "^6.11.0",
     "electron": "^28.0.0",
+    "electron-packager": "^17.1.2",
     "electron-reload": "^2.0.0-alpha.1",
-    "typescript": "^5.3.3"
+    "style-loader": "^3.3.4",
+    "ts-loader": "^9.5.2",
+    "typescript": "^5.3.3",
+    "webpack": "^5.99.7",
+    "webpack-cli": "^5.1.4"
   },
   "dependencies": {
     "find-process": "^1.4.10",

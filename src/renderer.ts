@@ -35,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('Renderer: Received expand request from MiniWindow.');
 
         // 1. Hide the MiniWindow
-        miniWindow.hide(); // *** ADD THIS ***
+        miniWindow.hide(); 
 
         // 2. Tell main process to show the full chat window
         window.api.toggleWindowSize(); // This triggers main.ts to resize/center/show
@@ -61,6 +61,58 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }, 150); // Adjust delay if needed
       });
+
+      // --- Add Option to Open Main Chat Window ---
+      const addMainChatButton = () => {
+        // Find chat actions container
+        const chatActions = document.querySelector('.chat-actions');
+        if (!chatActions) {
+          console.error('Chat actions container not found');
+          return;
+        }
+        
+        // Create new button
+        const openMainChatBtn = document.createElement('button');
+        openMainChatBtn.textContent = 'Full Chat Window';
+        openMainChatBtn.id = 'open-main-chat-button';
+        
+        // Add click handler
+        openMainChatBtn.addEventListener('click', () => {
+          console.log('Opening main chat window');
+          window.api.openMainChat();
+        });
+        
+        // Add to DOM - insert before the close button (last button)
+        chatActions.insertBefore(openMainChatBtn, document.getElementById('close-chat-button'));
+      };
+      
+      // Add the button to open the main chat window
+      addMainChatButton();
+
+      // --- Add Test Button for Tool Calls Demo (temporary) ---
+      const addTestButton = () => {
+        const testButton = document.createElement('button');
+        testButton.textContent = 'Test Tool Calls';
+        testButton.style.position = 'fixed';
+        testButton.style.bottom = '10px';
+        testButton.style.right = '10px';
+        testButton.style.zIndex = '1000';
+        testButton.style.padding = '8px 12px';
+        testButton.style.backgroundColor = '#3b82f6';
+        testButton.style.color = 'white';
+        testButton.style.border = 'none';
+        testButton.style.borderRadius = '4px';
+        testButton.style.cursor = 'pointer';
+        
+        testButton.addEventListener('click', () => {
+          chatBar.simulateToolCalls();
+        });
+        
+        document.body.appendChild(testButton);
+      };
+
+      // Uncomment to add a test button for demo purposes
+      // addTestButton();
 
       console.log('Renderer: ChatBar and MiniWindow initialized successfully.');
 

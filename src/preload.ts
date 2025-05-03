@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld(
       // Whitelist channels
       const validChannels = [
         'new-chat',
+        'chat-response',
+        'tool-call-update',
         'audio-recording-started', 
         'audio-recording-stopped'
       ];
@@ -28,6 +30,12 @@ contextBridge.exposeInMainWorld(
     toggleWindowSize: () => ipcRenderer.send('toggle-window-size'),
     hideWindow: () => ipcRenderer.send('hide-window'),
     createNewChat: () => ipcRenderer.send('create-new-chat'),
+    openMainChat: () => ipcRenderer.send('open-main-chat'),
+    
+    // Main chat window functions
+    sendChatMessage: (message: string) => ipcRenderer.invoke('send-chat-message', message),
+    sendToolCallResponse: (response: { id: string, action: 'approve' | 'reject', parameters?: Record<string, any> }) => 
+      ipcRenderer.invoke('send-tool-call-response', response),
     
     // Audio-related functions
     requestMicrophonePermission: () => ipcRenderer.invoke('request-microphone-permission'),
